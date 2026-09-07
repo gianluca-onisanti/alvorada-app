@@ -50,8 +50,13 @@ class AudioDownloadWorker(
 
         setForeground(foregroundInfo(name, 0))
 
-        val target = store.createPending(name, mime)
-            ?: return@withContext Result.failure(error("Não consegui criar o arquivo."))
+        val target = runCatching { store.createPending(name, mime) }
+            .getOrElse { failure ->
+                Log.e(TAG, "Não consegui criar a entrada de $name", failure)
+                return@withContext Result.failure(
+                    error(failure.message ?: "Não consegui criar o arquivo.")
+                )
+            }
 
         val result = runCatching { download(streamUrl, target, store, name) }
 

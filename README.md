@@ -480,10 +480,21 @@ duas implementações. Quando a do YouTube parar de funcionar, o que quebra é u
 falha aparece com uma mensagem que diz o que fazer, e colar a **URL direta do arquivo**
 continua trazendo o áudio para dentro sem depender de atualização nenhuma.
 
-O resolvedor do YouTube escolhe o stream **só de áudio** de maior bitrate. Isso evita baixar
-o vídeo inteiro para jogar a imagem fora, e o formato que vem — m4a/AAC ou webm/Opus — o
-`MediaPlayer` toca direto desde a API 21: não há transcodificação no caminho, o arquivo entra
-na pasta com a qualidade que saiu.
+O resolvedor do YouTube escolhe o stream **só de áudio**, o que evita baixar o vídeo inteiro
+para jogar a imagem fora. Não há transcodificação no caminho: o arquivo entra na pasta com a
+qualidade que saiu.
+
+A escolha é por **formato primeiro, bitrate depois**, e a ordem não é estética. O MediaStore
+recusa `audio/webm` na coleção de áudio — `IllegalArgumentException: Unsupported MIME type
+audio/webm` —, e a faixa de maior bitrate do YouTube é quase sempre Opus dentro de WebM.
+Escolher só por bitrate, que era o critério da primeira versão, levava direto para o único
+formato que a pasta não aceita: o download baixava e morria na hora de gravar.
+
+Os tipos aceitos foram verificados inserindo cada um direto no provider do aparelho:
+`audio/mp4`, `audio/mpeg` e `audio/ogg` entram, `audio/webm` não. `audio/mp4` (m4a/AAC) vem
+primeiro porque é também o que o `MediaPlayer` toca desde a API 21. A diferença entre Opus a
+160 kbps e AAC a 128 num despertador às 6h é teórica; a diferença entre um arquivo que grava
+e um que não grava, não.
 
 **Ressalva registrada.** Baixar do YouTube contraria os Termos de Serviço dele — é por isso
 que apps do tipo NewPipe não estão na Play Store. Para este caso (app pessoal, sideload por

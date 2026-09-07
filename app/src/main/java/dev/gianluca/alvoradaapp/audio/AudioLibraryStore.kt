@@ -21,6 +21,16 @@ data class LibraryFile(
 )
 
 /**
+ * A pasta recusou o arquivo, e por quê.
+ *
+ * Existe porque a versão anterior devolvia `null` e o chamador dizia "não consegui
+ * criar o arquivo" — verdadeiro, inútil, e indistinguível entre um formato recusado,
+ * um nome inválido e um cartão cheio. O motivo real só aparecia no logcat, que
+ * ninguém tem à mão às 6h.
+ */
+class LibraryWriteException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
  * Dono de `Music/Alvorada/`.
  *
  * A V1 copiava todo som escolhido para `filesDir`, porque uma URI do SAF depende de
@@ -50,18 +60,40 @@ class AudioLibraryStore(private val context: Context) {
      * sem isso um player de música acharia um arquivo truncado no meio do caminho.
      * Quem escreve precisa chamar [publish] no fim.
      */
-    suspend fun createPending(displayName: String, mimeType: String): Uri? =
+    suspend fun createPending(displayName: String, mimeType: String): Uri =
         withContext(Dispatchers.IO) {
-            runCatching {
-                val values = ContentValues().apply {
-                    put(MediaStore.Audio.Media.DISPLAY_NAME, displayName.sanitized())
-                    put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
-                    put(MediaStore.Audio.Media.RELATIVE_PATH, RELATIVE_PATH)
-                    put(MediaStore.Audio.Media.IS_PENDING, 1)
+            val values = ContentValues().apply {
+                put(MediaStore.Audio.Media.DISPLAY_NAME, displayName.sanitized())
+                put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Audio.Media.RELATIVE_PATH, RELATIVE_PATH)
+                put(MediaStore.Audio.Media.IS_PENDING, 1)
+            }
+            val inserted = runCatching { context.contentResolver.insert(collection, values) }
+                .getOrElse { failure ->
+                    Log.e(TAG, "Não consegui criar $displayName", failure)
+                    throw LibraryWriteException(explain(failure, mimeType), failure)
                 }
-                context.contentResolver.insert(collection, values)
-            }.onFailure { Log.e(TAG, "Não consegui criar $displayName", it) }.getOrNull()
+            inserted ?: throw LibraryWriteException(
+                "A pasta ${folderLabel()} recusou o arquivo, sem dizer o motivo."
+            )
         }
+
+    /**
+     * Traduz a recusa do MediaStore.
+     *
+     * O caso que já apareceu na prática tem nome: `Unsupported MIME type audio/webm`.
+     * Sem esta tradução, ele chega ao usuário como uma linha de exceção em inglês no
+     * meio de uma tela em português.
+     */
+    private fun explain(failure: Throwable, mimeType: String): String {
+        val raw = failure.message.orEmpty()
+        return when {
+            raw.contains("Unsupported MIME type", ignoreCase = true) ->
+                "A pasta de músicas do Android não aceita arquivos $mimeType."
+            raw.isNotBlank() -> "O sistema recusou o arquivo: $raw"
+            else -> "O sistema recusou a criação do arquivo."
+        }
+    }
 
     fun openOutput(uri: Uri): OutputStream? =
         runCatching { context.contentResolver.openOutputStream(uri) }.getOrNull()

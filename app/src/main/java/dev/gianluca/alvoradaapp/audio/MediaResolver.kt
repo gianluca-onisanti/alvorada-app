@@ -11,6 +11,7 @@ import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request as NpRequest
 import org.schabi.newpipe.extractor.downloader.Response as NpResponse
+import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import java.util.concurrent.TimeUnit
 
@@ -121,10 +122,24 @@ class YouTubeResolver(private val client: OkHttpClient) : MediaResolver {
                 )
             }
 
-        val best = info.audioStreams
-            ?.filterNotNull()
-            ?.maxByOrNull { it.averageBitrate }
-            ?: throw ResolveException("Esse vídeo não expôs nenhuma faixa só de áudio.")
+        val candidates = info.audioStreams?.filterNotNull().orEmpty()
+        if (candidates.isEmpty()) {
+            throw ResolveException("Esse vídeo não expôs nenhuma faixa só de áudio.")
+        }
+
+        val best = candidates
+            .mapNotNull { stream ->
+                val mime = stream.format?.mimeType ?: return@mapNotNull null
+                val rank = STORABLE_MIMES.indexOf(mime)
+                if (rank < 0) null else Scored(stream, rank)
+            }
+            // Formato primeiro, bitrate depois.
+            .minWithOrNull(compareBy({ it.rank }, { -it.stream.averageBitrate }))
+            ?.stream
+            ?: throw ResolveException(
+                "Esse vídeo só oferece áudio em formatos que a pasta de músicas do " +
+                    "Android não aceita. Tente outro vídeo.",
+            )
 
         RemoteAudio(
             streamUrl = best.content ?: throw ResolveException("A faixa de áudio veio vazia."),
@@ -150,10 +165,31 @@ class YouTubeResolver(private val client: OkHttpClient) : MediaResolver {
         }
     }
 
+    private class Scored(val stream: AudioStream, val rank: Int)
+
     private companion object {
         const val TAG = "YouTubeResolver"
         @Volatile var initialized = false
         val YOUTUBE_HOSTS = listOf("youtube.com", "youtu.be", "youtube-nocookie.com")
+
+        /**
+         * Os formatos que o MediaStore aceita na coleção de áudio, em ordem de
+         * preferência.
+         *
+         * A escolha era pelo **maior bitrate**, e no YouTube essa faixa é quase sempre
+         * Opus dentro de WebM — exatamente o formato que a pasta de músicas recusa,
+         * com `IllegalArgumentException: Unsupported MIME type audio/webm`. O download
+         * baixava e morria na hora de gravar, dizendo só "não consegui criar o
+         * arquivo".
+         *
+         * Verificado no aparelho, inserindo cada tipo direto no provider: `audio/mp4`,
+         * `audio/mpeg` e `audio/ogg` entram; `audio/webm` não. `audio/mp4` (m4a/AAC)
+         * vem primeiro porque também é o que o `MediaPlayer` toca desde sempre.
+         *
+         * A diferença entre Opus a 160 kbps e AAC a 128 num despertador às 6h é
+         * teórica. A diferença entre um arquivo que grava e um que não grava, não.
+         */
+        val STORABLE_MIMES = listOf("audio/mp4", "audio/mpeg", "audio/ogg")
     }
 }
 
