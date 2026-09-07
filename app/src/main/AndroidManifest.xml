@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Alarme exato. Em API 33+ USE_EXACT_ALARM é concedido na instalação para apps
          cuja função principal é despertador; abaixo disso cai no SCHEDULE_EXACT_ALARM,
@@ -95,6 +96,22 @@
             android:name=".alarm.AlarmService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!--
+            O serviço em foreground do WorkManager, redeclarado só para dizer o tipo.
+
+            A biblioteca o declara sem `foregroundServiceType`, e a partir do Android 14
+            o tipo pedido em runtime precisa estar contido no que o manifesto declara.
+            Sem esta linha, o `setForeground(dataSync)` do download derruba o processo
+            inteiro com "foregroundServiceType 0x00000001 is not a subset of
+            foregroundServiceType attribute 0x00000000" — e não é uma falha do worker,
+            que o WorkManager saberia tratar: o estouro acontece dentro do serviço, na
+            thread principal, longe de qualquer try do nosso código.
+        -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
 
         <receiver
             android:name=".alarm.AlarmReceiver"

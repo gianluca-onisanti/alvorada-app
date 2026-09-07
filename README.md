@@ -535,6 +535,18 @@ até terminar: nenhum player de música encontra um arquivo pela metade. Se o do
 a entrada pendente é apagada — um arquivo pendente e vazio ficaria invisível para sempre,
 ocupando espaço que ninguém consegue achar para apagar.
 
+**A pegadinha do Android 14.** O `AndroidManifest.xml` redeclara o
+`androidx.work.impl.foreground.SystemForegroundService` só para dizer
+`android:foregroundServiceType="dataSync"`. A biblioteca o declara sem tipo, e a partir da
+API 34 o tipo pedido em runtime precisa estar contido no que o manifesto declara — sem essa
+linha, tocar em "Baixar" derruba o processo inteiro com *"foregroundServiceType 0x00000001
+is not a subset of foregroundServiceType attribute 0x00000000"*.
+
+E não é uma falha que o WorkManager saiba tratar: o estouro acontece dentro do serviço, na
+thread principal, longe de qualquer `try` deste código — daí o app fechar em vez de mostrar
+erro. Vale como aviso geral: **todo** worker que chame `setForeground` com tipo precisa da
+declaração correspondente aqui.
+
 ## Pontos, níveis e sequência
 
 | Evento                       | XP        | Moedas                            |
