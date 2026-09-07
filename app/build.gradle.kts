@@ -83,5 +83,11 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
 
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.common)
+    implementation(libs.okhttp)
+    implementation(libs.newpipe.extractor)
+
     testImplementation(libs.junit)
 }

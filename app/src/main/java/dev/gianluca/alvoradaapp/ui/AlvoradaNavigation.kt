@@ -1,11 +1,13 @@
 package dev.gianluca.alvoradaapp.ui
 
+import android.net.Uri
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Redeem
@@ -35,6 +37,8 @@ import dev.gianluca.alvoradaapp.diagnostics.DiagnosticsScreen
 import dev.gianluca.alvoradaapp.ui.alarms.AlarmEditorScreen
 import dev.gianluca.alvoradaapp.ui.alarms.AlarmListScreen
 import dev.gianluca.alvoradaapp.ui.alarms.NEW_ALARM_ID
+import dev.gianluca.alvoradaapp.ui.audio.AudioLibraryScreen
+import dev.gianluca.alvoradaapp.ui.audio.AudioTrimScreen
 import dev.gianluca.alvoradaapp.ui.checklists.ChecklistEditorScreen
 import dev.gianluca.alvoradaapp.ui.checklists.ChecklistScreen
 import dev.gianluca.alvoradaapp.ui.checklists.NEW_CHECKLIST_ID
@@ -55,10 +59,12 @@ object Routes {
     const val EVIDENCE_BOARD = "evidences"
     const val GALLERY = "gallery"
     const val REWARDS = "rewards"
+    const val AUDIO = "audio"
     const val SETTINGS = "settings"
     const val ALARM_EDITOR = "alarm/{id}?once={once}"
     const val EVIDENCE = "evidence/{instanceId}"
     const val CHECKLIST_EDITOR = "checklist/{id}"
+    const val AUDIO_TRIM = "audio/trim?uri={uri}"
 
     /**
      * [once] só diz respeito a um despertador **novo**: para um já existente, quem
@@ -67,6 +73,12 @@ object Routes {
     fun alarmEditor(id: Long, once: Boolean = false) = "alarm/$id?once=$once"
     fun evidence(instanceId: Long) = "evidence/$instanceId"
     fun checklistEditor(id: Long) = "checklist/$id"
+
+    /**
+     * A URI do MediaStore vira parâmetro de consulta, e não segmento de caminho: ela
+     * contém barras, e num segmento elas partiriam a rota em pedaços.
+     */
+    fun audioTrim(uri: String) = "audio/trim?uri=" + Uri.encode(uri)
 }
 
 /**
@@ -85,6 +97,7 @@ private val DESTINATIONS = listOf(
     NavDestination(Routes.EVIDENCE_BOARD, "Evidências", Icons.Filled.PhotoCamera),
     NavDestination(Routes.GALLERY, "Galeria", Icons.Filled.PhotoLibrary),
     NavDestination(Routes.REWARDS, "Prêmios", Icons.Filled.Redeem),
+    NavDestination(Routes.AUDIO, "Áudios", Icons.Filled.LibraryMusic),
     NavDestination(Routes.SETTINGS, "Ajustes", Icons.Filled.Settings),
 )
 
@@ -246,6 +259,24 @@ fun AlvoradaNavigation(diagnosticsRefreshKey: Int) {
                         ?: NEW_CHECKLIST_ID
                     ChecklistEditorScreen(
                         checklistId = id,
+                        onDone = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Routes.AUDIO) {
+                    AudioLibraryScreen(
+                        onTrim = { uri -> navController.navigate(Routes.audioTrim(uri)) },
+                        onOpenDrawer = openDrawer,
+                    )
+                }
+
+                composable(
+                    route = Routes.AUDIO_TRIM,
+                    arguments = listOf(navArgument("uri") { type = NavType.StringType }),
+                ) { entry ->
+                    val uri = entry.arguments?.getString("uri") ?: return@composable
+                    AudioTrimScreen(
+                        sourceUri = uri,
                         onDone = { navController.popBackStack() },
                     )
                 }

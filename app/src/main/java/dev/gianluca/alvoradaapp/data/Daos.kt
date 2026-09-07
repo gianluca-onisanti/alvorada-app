@@ -58,6 +58,10 @@ interface AlarmDao {
     @Query("UPDATE alarms SET suppressedUntil = :until WHERE id = :id")
     suspend fun setSuppressedUntil(id: Long, until: Long?)
 
+    /** Reaponta um som próprio migrado para o novo caminho na biblioteca pública. */
+    @Query("UPDATE alarms SET soundUri = :to WHERE soundUri = :from")
+    suspend fun rewriteSoundUri(from: String, to: String)
+
     @Delete
     suspend fun delete(alarm: AlarmEntity)
 }

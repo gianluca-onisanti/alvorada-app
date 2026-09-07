@@ -7,4 +7,6 @@
 
     <string name="notif_alarm_title">Despertador</string>
     <string name="notif_alarm_action_open">Abrir</string>
+    <string name="channel_download_name">Downloads de áudio</string>
+    <string name="channel_download_desc">Progresso do download de sons para a biblioteca.</string>
 </resources>

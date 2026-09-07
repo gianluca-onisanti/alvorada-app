@@ -71,6 +71,7 @@ import dev.gianluca.alvoradaapp.core.RepeatKind
 import dev.gianluca.alvoradaapp.data.AlarmEntity
 import dev.gianluca.alvoradaapp.data.FolderEntity
 import dev.gianluca.alvoradaapp.data.MissionEntity
+import dev.gianluca.alvoradaapp.ui.audio.AudioLibraryPickerDialog
 import dev.gianluca.alvoradaapp.ui.components.RecurrenceEditor
 import dev.gianluca.alvoradaapp.ui.components.formatClock
 import dev.gianluca.alvoradaapp.ui.components.formatFireMoment
@@ -140,6 +141,7 @@ fun AlarmEditorScreen(
     var soundUri by rememberSaveable { mutableStateOf<String?>(null) }
     var soundIsSystem by rememberSaveable { mutableStateOf(true) }
     var soundLabel by rememberSaveable { mutableStateOf("Padrão do sistema") }
+    var pickingFromLibrary by remember { mutableStateOf(false) }
     var volume by rememberSaveable { mutableIntStateOf(100) }
     var escalate by rememberSaveable { mutableStateOf(true) }
     var vibrate by rememberSaveable { mutableStateOf(true) }
@@ -406,6 +408,10 @@ fun AlarmEditorScreen(
                         onClick = { filePicker.launch(arrayOf("audio/*")) },
                         label = { Text("Arquivo próprio") },
                     )
+                    AssistChip(
+                        onClick = { pickingFromLibrary = true },
+                        label = { Text("Da biblioteca") },
+                    )
                 }
                 Spacer(Modifier.height(16.dp))
 
@@ -644,6 +650,21 @@ fun AlarmEditorScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") }
+            },
+        )
+    }
+
+    if (pickingFromLibrary) {
+        AudioLibraryPickerDialog(
+            onDismiss = { pickingFromLibrary = false },
+            onPick = { file ->
+                // O arquivo NÃO é copiado, ao contrário do que "Arquivo próprio" faz:
+                // ele já mora numa pasta pública e estável, que sobrevive à
+                // desinstalação e ao restauro de backup.
+                soundUri = file.uri.toString()
+                soundIsSystem = false
+                soundLabel = file.displayName
+                pickingFromLibrary = false
             },
         )
     }

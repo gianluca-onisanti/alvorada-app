@@ -14,6 +14,13 @@ object Notifications {
     const val CHANNEL_ALARM = "alarm_v1"
 
     /**
+     * Canal do download de áudio. Importância baixa de propósito: é uma barra de
+     * progresso obrigatória para o worker rodar em foreground, não um aviso — e um
+     * download não deveria interromper nada.
+     */
+    const val CHANNEL_DOWNLOAD = "download_v1"
+
+    /**
      * O canal é criado com som nulo de propósito: quem toca é o `MediaPlayer` do
      * `AlarmSoundPlayer`, com `USAGE_ALARM`. Deixar o canal tocar também resultaria
      * em dois áudios sobrepostos, e o som do canal não fura o modo silencioso.
@@ -34,6 +41,17 @@ object Notifications {
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
         manager.createNotificationChannel(channel)
+
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_DOWNLOAD,
+                context.getString(R.string.channel_download_name),
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = context.getString(R.string.channel_download_desc)
+                setShowBadge(false)
+            }
+        )
     }
 
     /**

@@ -19,6 +19,7 @@ App pessoal, sem loja e sem servidor: tudo mora no aparelho, distribuído por AP
 - [Desligar: totalmente ou só a próxima](#desligar-totalmente-ou-só-a-próxima)
 - [Repetição: quatro modos](#repetição-quatro-modos)
 - [Checklists](#checklists)
+- [Biblioteca de áudio](#biblioteca-de-áudio)
 - [Pontos, níveis e sequência](#pontos-níveis-e-sequência)
 - [Backup](#backup)
 - [Decisões de design](#decisões-de-design)
@@ -95,6 +96,7 @@ ou um arrasto da borda esquerda:
 | **Evidências** | A dívida fotográfica: o que falta com o prazo correndo, e o que já foi entregue hoje com miniaturas.  |
 | **Galeria**    | Todas as fotos, agrupadas por dia, categoria ou despertador.                                          |
 | **Prêmios**    | A loja. Recompensas que você cadastra com um preço em moedas, e o histórico de resgates.              |
+| **Áudios**     | A biblioteca de sons. Baixa de um link, recorta o trecho, e alimenta o seletor do despertador.        |
 | **Ajustes**    | Permissões, tema, backup e o teste de fogo do despertador.                                            |
 
 As **quatro primeiras** também ficam na barra de baixo, porque são o ciclo diário e às 6h da
@@ -106,6 +108,8 @@ Até a V1 eram cinco abas numa barra, e Ajustes era uma chave escondida no cabe�
 Painel. Cinco era o teto do que cabe numa barra sem virar sopa de ícone, e a V2 acrescenta
 telas — então a lista completa foi para o menu lateral, e Ajustes virou um item nomeado
 como os outros em vez de um botão que só encontra quem já sabe que ele existe.
+
+Galeria, Prêmios, Áudios e Ajustes vivem só no menu.
 
 O menu **não abre** por arrasto durante uma edição de despertador nem sobre o visor da
 câmera: nas duas o gesto de borda pertence à tela, e abrir o menu ali significaria perder o
@@ -380,6 +384,97 @@ isso é tudo: não custa moeda, não quebra sequência, não fica vermelho. O ú
 ter rendido os pontos. É a mesma política de "missão não cumprida é informação, não
 repreensão".
 
+## Biblioteca de áudio
+
+Pôr um som novo no despertador era uma peregrinação: abrir o navegador, baixar o áudio,
+converter se preciso, passar pro celular por cabo, e só então achar o arquivo no seletor.
+
+Agora cola-se o link na tela de **Áudios** — de um vídeo do YouTube ou de um arquivo direto
+— e o áudio vem parar em `Music/Alvorada/`, pronto para recortar e usar.
+
+### Onde os arquivos ficam
+
+**`Music/Alvorada/`**, uma pasta pública de verdade: visível no gerenciador de arquivos e no
+PC por cabo, e **sobrevive à desinstalação**. Dá para jogar um MP3 lá na mão e ele aparece
+na biblioteca.
+
+Isso reverte uma decisão da V1, que copiava todo som escolhido para o diretório privado do
+app porque uma URI do SAF depende de permissão revogável e de um arquivo que pode ser movido.
+A pasta pública troca esse risco por outro — o arquivo fica exposto a quem quiser apagá-lo —
+e o plano assume a troca: a permissão de mídia é concedida uma vez por app, e não por
+arquivo como no SAF, e a rede de segurança já existia (o `AlarmSoundPlayer` cai no som padrão
+do sistema em qualquer falha). Em troca, o caminho passou a ser **estável entre
+instalações**, o que consertou de graça um defeito antigo: restaurar um backup devolvia
+`soundUri` apontando para o diretório de outra instalação, e o som próprio voltava mudo em
+silêncio.
+
+Por consequência, "Arquivo próprio" no editor também importa para lá agora, e os sons já
+configurados na V1 são **migrados uma vez** na primeira abertura. Eles nunca deixaram de
+tocar — `filesDir/sounds/` não sumiu e o player sempre aceitou `file://` —, mas ficariam de
+fora da tela de Áudios e ainda condenados a sumir na próxima desinstalação.
+
+A permissão de leitura de mídia é pedida **na própria tela de Áudios**, e não entre os
+checks dos Ajustes. Ela não é necessária para o despertador tocar, e um item a mais lá faria
+o aviso de pendências do Painel cobrar para sempre quem nunca usa a biblioteca. Ela só faz
+falta para ler arquivos que o app **não** criou — ou seja, exatamente o MP3 que você largou
+na pasta.
+
+### Recortar
+
+A tela de corte tem três coisas, e as três existem por causa da mesma frase do pedido:
+"cortar com boa precisão".
+
+| Peça | Por quê |
+| --- | --- |
+| **A onda desenhada** | Numa barra lisa não dá para achar onde a batida entra. Com a onda o ponto é visível, e as alças caem nele de primeira. |
+| **Ajuste fino de ±1s e ±100ms** | Arrastar com o dedo não acerta décimo de segundo. |
+| **Pré-escuta em loop** | É o que evita descobrir depois que o corte pegou o meio de uma sílaba. |
+
+A pré-escuta não grava nada: usa o `ClippingConfiguration` do ExoPlayer, que simplesmente
+toca só o intervalo. Só o botão de salvar chama o `Transformer`, que **transmuxa** quando o
+formato permite — na maioria dos casos o trecho sai sem reencodar, com a mesma qualidade do
+original. Foi o que dispensou FFmpeg nativo.
+
+**O original nunca é destruído.** Recortar cria um arquivo novo. Errar o ponto de corte em
+cima do único arquivo que você tem seria uma forma boba de perder um som que deu trabalho
+para achar.
+
+A onda é decodificada de verdade, com `MediaExtractor` + `MediaCodec`, porque não existe
+atalho: nem o MediaStore nem o Media3 expõem envelope de amplitude. Uma música de 4 minutos
+são ~40 MB de amostras, então o decodificador acumula por balde e joga o PCM fora — o que a
+tela precisa são algumas centenas de números, e eles ficam em cache por arquivo.
+
+### O extrator vai quebrar, e o app é feito para isso
+
+Não existe API oficial para baixar áudio do YouTube. Um extrator depende do formato do
+player, e o YouTube muda o player sem avisar — não é *se*, é *quando*.
+
+Por isso a resolução mora atrás de uma interface
+([MediaResolver.kt](app/src/main/java/dev/gianluca/alvoradaapp/audio/MediaResolver.kt)) com
+duas implementações. Quando a do YouTube parar de funcionar, o que quebra é um resolvedor: a
+falha aparece com uma mensagem que diz o que fazer, e colar a **URL direta do arquivo**
+continua trazendo o áudio para dentro sem depender de atualização nenhuma.
+
+O resolvedor do YouTube escolhe o stream **só de áudio** de maior bitrate. Isso evita baixar
+o vídeo inteiro para jogar a imagem fora, e o formato que vem — m4a/AAC ou webm/Opus — o
+`MediaPlayer` toca direto desde a API 21: não há transcodificação no caminho, o arquivo entra
+na pasta com a qualidade que saiu.
+
+**Ressalva registrada.** Baixar do YouTube contraria os Termos de Serviço dele — é por isso
+que apps do tipo NewPipe não estão na Play Store. Para este caso (app pessoal, sideload por
+APK, sem loja) isso não impede nada, mas fecha a porta da Play Store enquanto este código
+existir.
+
+### O download não morre se você trocar de app
+
+Roda no `WorkManager`, em foreground, com barra de progresso — e não numa corrotina da tela,
+que é o que faria um arquivo grande numa rede ruim morrer porque você foi ver uma mensagem.
+
+Escreve direto numa entrada **pendente** do MediaStore, invisível para o resto do sistema
+até terminar: nenhum player de música encontra um arquivo pela metade. Se o download falha,
+a entrada pendente é apagada — um arquivo pendente e vazio ficaria invisível para sempre,
+ocupando espaço que ninguém consegue achar para apagar.
+
 ## Pontos, níveis e sequência
 
 | Evento                       | XP        | Moedas                            |
@@ -453,10 +548,14 @@ status, que é justamente a confirmação visual de que existe algo agendado.
 deixaria o banco dizendo uma coisa e o `AlarmManager` fazendo outra. O repositório torna
 esse par indivisível.
 
-**Sons escolhidos pelo seletor são copiados para dentro do app.** Uma URI do SAF depende de
-uma permissão revogável e de um arquivo que pode ser movido ou apagado; em qualquer um dos
-casos o despertador acordaria mudo. Copiar custa alguns megabytes e elimina a classe
-inteira de falha.
+**Sons escolhidos pelo seletor são copiados — para uma pasta pública.** *(Revisto na V2.)*
+Uma URI do SAF depende de uma permissão revogável e de um arquivo que pode ser movido ou
+apagado; em qualquer um dos casos o despertador acordaria mudo, e por isso a V1 copiava para
+o diretório privado do app. A V2 mantém a cópia mas muda o destino para `Music/Alvorada/`:
+a permissão de mídia vale para o app inteiro e não por arquivo, o arquivo passa a ser
+visível e a sobreviver à desinstalação, e o caminho fica **estável entre instalações** — o
+que conserta a re-ancoragem de som próprio no restauro de backup. O custo assumido é que o
+arquivo fica exposto a quem quiser apagá-lo; a rede de segurança contra isso já existia.
 
 **Quem acende a tela é um wake lock, não a Activity.** O `setTurnScreenOn` nunca foi
 suficiente com o aparelho em Doze: o display só liga fisicamente com um wake lock de tela
@@ -577,6 +676,10 @@ A Activity é só a cara do que o serviço está fazendo — por isso fechá-la 
 | Fundo e superfície de vidro                         | [Bits.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/components/Bits.kt) |
 | Matemática de rodada (pura, testada)                | [ChecklistCycle.kt](app/src/main/java/dev/gianluca/alvoradaapp/core/ChecklistCycle.kt) |
 | Checklists: rodadas, marcação e supressão           | [ChecklistRepository.kt](app/src/main/java/dev/gianluca/alvoradaapp/data/ChecklistRepository.kt) |
+| Pasta pública de áudio (MediaStore)                 | [AudioLibraryStore.kt](app/src/main/java/dev/gianluca/alvoradaapp/audio/AudioLibraryStore.kt) |
+| Resolver link → stream (YouTube e URL direta)       | [MediaResolver.kt](app/src/main/java/dev/gianluca/alvoradaapp/audio/MediaResolver.kt) |
+| Download em foreground                              | [AudioDownloadWorker.kt](app/src/main/java/dev/gianluca/alvoradaapp/audio/AudioDownloadWorker.kt) |
+| Corte e desenho da onda                             | [AudioTrimmer.kt](app/src/main/java/dev/gianluca/alvoradaapp/audio/AudioTrimmer.kt) · [WaveformExtractor.kt](app/src/main/java/dev/gianluca/alvoradaapp/audio/WaveformExtractor.kt) |
 
 **Convenções do schema:** instantes absolutos são epoch millis (`Long`); datas civis são
 `String` ISO `yyyy-MM-dd`, que ordena lexicograficamente e serve direto como chave de
@@ -787,6 +890,28 @@ próximo.
 | 69 | Deixar uma rodada vencer sem tudo marcado                                | Vira expirada; a **sequência não se mexe**                       |
 | 70 | Exportar e restaurar backup                                              | Checklists, rodadas e marcações voltam íntegros                  |
 
+**Biblioteca de áudio**
+
+| #  | Teste                                                                    | Esperado                                                    |
+| -- | ------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| 71 | Colar um link do YouTube e tocar em "Buscar"                            | Título, duração e bitrate aparecem antes de baixar           |
+| 72 | Baixar, e abrir `Music/Alvorada/` no gerenciador de arquivos            | O arquivo está lá, com o nome do vídeo                       |
+| 73 ★ | Colar a URL direta de um MP3                                           | Mesmo caminho — é a saída para quando o extrator quebrar     |
+| 74 | Largar um MP3 na pasta pela mão e abrir Áudios                          | Aparece na lista (é isto que a permissão de mídia habilita)  |
+| 75 | Recortar um trecho: onda, alças, ±100ms, ouvir em loop                  | O loop toca só o intervalo; as alças acertam o ponto         |
+| 76 | Salvar o corte                                                          | Vira arquivo novo; **o original continua na lista**          |
+| 77 ★ | Pôr o corte num despertador, ativar silencioso e Não Perturbe, tocar   | Toca assim mesmo — o caminho novo preservou `USAGE_ALARM`    |
+| 78 ★ | Apagar o arquivo pelo gerenciador e deixar o alarme tocar              | Cai no som padrão do sistema, sem silêncio                   |
+| 79 ★ | Reiniciar o celular com um alarme de áudio próprio agendado            | Toca com o som certo                                         |
+| 80 | Começar um download e trocar de app no meio                             | Continua, com notificação de progresso                       |
+| 81 | Derrubar a rede no meio do download                                     | Falha com mensagem; **nenhum arquivo pela metade** na pasta  |
+| 82 ★ | Abrir a V2 pela primeira vez com sons próprios da V1 configurados      | Os sons migram para a pasta e continuam tocando              |
+| 83 | Exportar e restaurar backup com som próprio                             | Volta tocando — o defeito antigo de re-ancoragem             |
+
+O teste 73 é o mais importante da tabela, e não é sobre o YouTube: é a prova de que existe
+caminho quando o extrator quebrar. O 82 é a migração, que só acontece uma vez e por isso só
+dá para testar num aparelho que já tinha a V1.
+
 Os testes 62, 63 e 66 são os que mais importam. O 62 é o caso que o mecanismo de pulo antigo
 não resolveria; o 63 é a regra de que o despertador só se cala com **todos** os itens dele
 feitos; o 66 é a classe de falha mais assustadora que este app pode ter — um despertador que
@@ -818,7 +943,12 @@ Na ordem, do mais provável ao menos:
 ## Desenvolvimento
 
 **Stack:** Kotlin, Jetpack Compose (Material 3), Room + KSP, WorkManager, CameraX, Coil,
-Navigation Compose, kotlinx.serialization. `minSdk 29`, `targetSdk 36`, Java 17.
+Navigation Compose, kotlinx.serialization, Media3 (ExoPlayer + Transformer), OkHttp e
+NewPipeExtractor. `minSdk 29`, `targetSdk 36`, Java 17.
+
+O NewPipeExtractor vem do **JitPack**, que é a única razão de o repositório estar declarado
+em `settings.gradle.kts` — ele não publica no Maven Central. A versão é fixa de propósito:
+é a peça que quebra sozinha.
 
 **Setup:** instale o [Android Studio](https://developer.android.com/studio) — ele traz o
 JDK embutido (JBR 21) e baixa o SDK sozinho. `File → Open` na raiz do projeto, aguarde o
@@ -863,14 +993,16 @@ erros aparecem meses depois; o resto se verifica mais barato no aparelho.
 - **Fabricantes agressivos** continuam sendo o maior risco à confiabilidade, e não há nada
   que o app possa fazer além de avisar.
 
-### O que vem na V2
+### O que a V2 trouxe
 
-O redesign, o menu lateral e os checklists já estão aqui. Falta uma frente:
+Redesign quadrado e translúcido, menu lateral, checklists recorrentes e biblioteca de áudio.
+As quatro frentes estão no app.
 
-- **Biblioteca de áudio.** Colar uma URL, baixar o áudio em boa qualidade, cortar o trecho
-  exato com waveform e pré-escuta em loop, e guardar tudo numa pasta visível em
-  `Music/Alvorada/`. Hoje pôr um som novo no despertador exige baixar no computador, converter
-  e passar por cabo. Ressalva registrada: baixar do YouTube contraria os Termos de Serviço
-  dele, o que é aceitável num app pessoal distribuído por APK, mas fecha a porta da Play Store
-  — e qualquer extrator quebra sozinho quando o YouTube muda o player, então ele fica isolado
-  atrás de uma interface, com a URL direta como saída que continua funcionando.
+O que ficou para depois, deliberadamente:
+
+- **Os áudios não entram no ZIP de backup.** Eles agora sobrevivem à desinstalação, que é
+  melhor do que antes, mas perder o aparelho perde os arquivos — que são re-baixáveis. Se o
+  espelho no backup entrar, `sanitizedRelative()` em `BackupManager` exige exatamente dois
+  segmentos de caminho e precisaria de uma variante de profundidade 1.
+- **Checklist não exige foto**, e cobrança continua sendo mecânica de missão. Se fizer falta,
+  o caminho é reusar `EvidenceStore` + `evidence_photos` com uma FK nova.

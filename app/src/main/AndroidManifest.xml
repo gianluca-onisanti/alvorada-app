@@ -33,6 +33,27 @@
 
     <!-- Fase 2 -->
     <uses-permission android:name="android.permission.CAMERA" />
+
+    <!--
+        Biblioteca de áudio.
+
+        INTERNET e ACCESS_NETWORK_STATE são normais: não pedem nada ao usuário. O
+        download roda num worker em foreground, daí o FOREGROUND_SERVICE_DATA_SYNC.
+
+        As de leitura de mídia são de runtime, e só fazem falta para ler arquivos que
+        o app NÃO criou — ou seja, exatamente o caso de jogar um MP3 na pasta
+        `Music/Alvorada/` pelo gerenciador de arquivos. Escrever lá pelo MediaStore
+        não exige permissão nenhuma na API 29+.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_AUDIO"
+        android:minSdkVersion="33" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <uses-feature
         android:name="android.hardware.camera.any"
         android:required="false" />

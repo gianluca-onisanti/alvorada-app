@@ -5,6 +5,7 @@ import android.media.RingtoneManager
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
+import dev.gianluca.alvoradaapp.audio.AudioLibraryStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -25,7 +26,10 @@ data class ChosenSound(
  * qualquer um dos casos o despertador acordaria mudo. Copiar custa alguns megabytes e
  * elimina a classe inteira de falha.
  */
-class AlarmSoundStore(private val context: Context) {
+class AlarmSoundStore(
+    private val context: Context,
+    private val library: AudioLibraryStore,
+) {
 
     private val soundsDir: File
         get() = File(context.filesDir, "sounds").apply { mkdirs() }
@@ -48,38 +52,76 @@ class AlarmSoundStore(private val context: Context) {
     }
 
     /**
-     * Copia o arquivo escolhido para o storage do app. Retorna `null` se a leitura
+     * Copia o arquivo escolhido para a biblioteca pública. Retorna `null` se a leitura
      * falhar — melhor manter o som anterior do que gravar uma referência quebrada.
+     *
+     * Na V1 a cópia ia para `filesDir/sounds/`, invisível e apagada na
+     * desinstalação. Agora vai para o mesmo `Music/Alvorada/` dos áudios baixados:
+     * um lugar só para tudo que toca, visível no gerenciador de arquivos, com um
+     * caminho estável entre instalações — o que conserta de graça a re-ancoragem de
+     * som próprio no restauro de backup.
      */
     suspend fun importUserSound(source: Uri): ChosenSound? = withContext(Dispatchers.IO) {
         val displayName = queryDisplayName(source) ?: "som"
-        val target = File(soundsDir, "${System.currentTimeMillis()}_${displayName.sanitized()}")
+        val mime = context.contentResolver.getType(source) ?: "audio/mpeg"
+
+        val target = library.createPending(displayName, mime) ?: return@withContext null
 
         val ok = runCatching {
             context.contentResolver.openInputStream(source)?.use { input ->
-                target.outputStream().use { output -> input.copyTo(output) }
+                library.openOutput(target)?.use { output -> input.copyTo(output) }
+                    ?: error("Não foi possível escrever em $target")
             } ?: error("Não foi possível abrir $source")
         }.onFailure { Log.e(TAG, "Falha ao importar som de $source", it) }.isSuccess
 
         if (!ok) {
-            target.delete()
+            library.delete(target)
             return@withContext null
         }
+        library.publish(target)
 
-        ChosenSound(
-            uri = Uri.fromFile(target).toString(),
-            isSystem = false,
-            label = displayName,
-        )
+        ChosenSound(uri = target.toString(), isSystem = false, label = displayName)
     }
 
-    /** Remove um som importado que não é mais usado por nenhum despertador. */
-    fun deleteImported(uriString: String?) {
-        val uri = uriString?.let(Uri::parse) ?: return
-        if (uri.scheme != "file") return
-        val file = uri.path?.let(::File) ?: return
-        if (file.parentFile == soundsDir && file.exists()) file.delete()
-    }
+    /**
+     * Move os sons da V1 para a biblioteca pública, uma vez.
+     *
+     * Os `file://` antigos continuavam tocando — `filesDir/sounds/` não sumiu e o
+     * `AlarmSoundPlayer` sempre aceitou esse esquema. A migração existe por outro
+     * motivo: sem ela os sons já configurados ficariam de fora da tela de Áudios,
+     * invisíveis e ainda condenados a sumir na próxima desinstalação.
+     *
+     * Devolve quantos foram movidos. Idempotente: quando a pasta antiga esvazia, não
+     * há mais nada a fazer.
+     */
+    suspend fun migrateLegacySounds(rewrite: suspend (from: String, to: String) -> Unit): Int =
+        withContext(Dispatchers.IO) {
+            val legacy = soundsDir.listFiles()?.filter { it.isFile } ?: return@withContext 0
+            var moved = 0
+
+            for (file in legacy) {
+                val target = library.createPending(file.name, "audio/mpeg") ?: continue
+                val ok = runCatching {
+                    library.openOutput(target)?.use { output ->
+                        file.inputStream().use { it.copyTo(output) }
+                    } ?: error("Não foi possível escrever em $target")
+                }.onFailure { Log.e(TAG, "Falha ao migrar ${file.name}", it) }.isSuccess
+
+                if (!ok) {
+                    library.delete(target)
+                    continue
+                }
+                library.publish(target)
+                // Só apaga o original depois que o novo está publicado: uma queda no
+                // meio do caminho deixa uma cópia a mais, nunca zero.
+                rewrite(Uri.fromFile(file).toString(), target.toString())
+                file.delete()
+                moved++
+            }
+
+            if (moved > 0) Log.i(TAG, "$moved som(ns) migrado(s) para a biblioteca")
+            moved
+        }
 
     private fun queryDisplayName(uri: Uri): String? = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
