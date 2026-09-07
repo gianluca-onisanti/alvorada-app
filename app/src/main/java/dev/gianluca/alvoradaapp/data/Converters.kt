@@ -28,6 +28,15 @@ class Converters {
     fun stringToPointsReason(value: String): PointsReason = PointsReason.valueOf(value)
 
     @TypeConverter
+    fun checklistCycleStatusToString(value: ChecklistCycleStatus): String = value.name
+
+    /** Tolerante na leitura pelo mesmo motivo de [stringToRepeatKind]. */
+    @TypeConverter
+    fun stringToChecklistCycleStatus(value: String): ChecklistCycleStatus =
+        runCatching { ChecklistCycleStatus.valueOf(value) }
+            .getOrDefault(ChecklistCycleStatus.OPEN)
+
+    @TypeConverter
     fun repeatKindToString(value: RepeatKind): String = value.name
 
     /**

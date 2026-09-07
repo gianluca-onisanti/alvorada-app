@@ -27,6 +27,11 @@ interface BackupDao {
     @Query("SELECT * FROM rewards") suspend fun rewards(): List<RewardEntity>
     @Query("SELECT * FROM reward_redemptions") suspend fun redemptions(): List<RewardRedemptionEntity>
     @Query("SELECT * FROM streak_state WHERE id = 1") suspend fun streak(): StreakStateEntity?
+    @Query("SELECT * FROM checklists") suspend fun checklists(): List<ChecklistEntity>
+    @Query("SELECT * FROM checklist_items") suspend fun checklistItems(): List<ChecklistItemEntity>
+    @Query("SELECT * FROM checklist_cycles") suspend fun checklistCycles(): List<ChecklistCycleEntity>
+    @Query("SELECT * FROM checklist_item_states")
+    suspend fun checklistItemStates(): List<ChecklistItemStateEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putFolders(items: List<FolderEntity>)
@@ -58,6 +63,18 @@ interface BackupDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putStreak(item: StreakStateEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putChecklists(items: List<ChecklistEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putChecklistItems(items: List<ChecklistItemEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putChecklistCycles(items: List<ChecklistCycleEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putChecklistItemStates(items: List<ChecklistItemStateEntity>)
+
     @Query("DELETE FROM evidence_photos") suspend fun wipePhotos()
     @Query("DELETE FROM mission_instances") suspend fun wipeInstances()
     @Query("DELETE FROM alarm_occurrences") suspend fun wipeOccurrences()
@@ -68,6 +85,10 @@ interface BackupDao {
     @Query("DELETE FROM reward_redemptions") suspend fun wipeRedemptions()
     @Query("DELETE FROM rewards") suspend fun wipeRewards()
     @Query("DELETE FROM streak_state") suspend fun wipeStreak()
+    @Query("DELETE FROM checklist_item_states") suspend fun wipeChecklistItemStates()
+    @Query("DELETE FROM checklist_cycles") suspend fun wipeChecklistCycles()
+    @Query("DELETE FROM checklist_items") suspend fun wipeChecklistItems()
+    @Query("DELETE FROM checklists") suspend fun wipeChecklists()
 
     /**
      * Substitui todo o conteúdo. Transação única: ou o backup entra inteiro, ou o
@@ -85,8 +106,17 @@ interface BackupDao {
         rewards: List<RewardEntity>,
         redemptions: List<RewardRedemptionEntity>,
         streak: StreakStateEntity?,
+        checklists: List<ChecklistEntity>,
+        checklistItems: List<ChecklistItemEntity>,
+        checklistCycles: List<ChecklistCycleEntity>,
+        checklistItemStates: List<ChecklistItemStateEntity>,
     ) {
-        // Apagar na ordem inversa das dependências.
+        // Apagar na ordem inversa das dependências. Os checklists vêm antes dos
+        // alarmes: `checklist_items` aponta para `alarms`, e apagar o alarme
+        // primeiro anularia o vínculo (ON DELETE SET NULL) antes de a linha do
+        // item ser apagada de qualquer jeito.
+        wipeChecklistItemStates(); wipeChecklistCycles(); wipeChecklistItems()
+        wipeChecklists()
         wipePhotos(); wipeInstances(); wipeOccurrences(); wipeMissions(); wipeAlarms()
         wipePoints(); wipeRedemptions(); wipeRewards(); wipeFolders(); wipeStreak()
 
@@ -100,5 +130,12 @@ interface BackupDao {
         putRedemptions(redemptions)
         putPoints(points)
         streak?.let { putStreak(it) }
+
+        // Depois de pastas e alarmes: um checklist referencia a pasta, e um item
+        // pode referenciar um despertador.
+        putChecklists(checklists)
+        putChecklistItems(checklistItems)
+        putChecklistCycles(checklistCycles)
+        putChecklistItemStates(checklistItemStates)
     }
 }

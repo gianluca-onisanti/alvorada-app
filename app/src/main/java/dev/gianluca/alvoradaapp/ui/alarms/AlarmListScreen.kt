@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -413,6 +414,28 @@ private fun AlarmRow(
                         Spacer(Modifier.size(4.dp))
                         Text(
                             text = "${formatFireClock(skipped)} pulado · toque para desfazer",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                }
+
+                // Pela mesma razão do bloco acima: um despertador que não toca precisa
+                // dizer por quê. A diferença é que este não oferece desfazer — quem
+                // calou foi o checklist, e o caminho de destravar é desmarcar o item
+                // lá, não aqui.
+                outlook.suppressedUntil?.let { until ->
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Checklist,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.secondary,
+                        )
+                        Spacer(Modifier.size(4.dp))
+                        Text(
+                            text = "Checklist cumprido · volta ${formatTimeUntil(until)}",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.secondary,
                         )

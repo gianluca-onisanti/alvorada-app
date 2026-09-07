@@ -29,6 +29,15 @@ object AlarmContract {
     /** Missões já marcadas na própria tela do alarme, no momento de dispensar. */
     const val EXTRA_COMPLETED_MISSIONS = "completedMissions"
 
+    /**
+     * Canal próprio, e não o mesmo conjunto de [EXTRA_COMPLETED_MISSIONS]: ids de
+     * missão e de item de checklist vêm de tabelas diferentes, as duas com
+     * autoincremento a partir de 1. Misturá-los faria a missão 5 marcar também o
+     * item 5 — um cumprimento fantasma, difícil de perceber e impossível de
+     * reproduzir de propósito.
+     */
+    const val EXTRA_COMPLETED_CHECKLIST_ITEMS = "completedChecklistItems"
+
     const val NO_ID = -1L
 
     /**

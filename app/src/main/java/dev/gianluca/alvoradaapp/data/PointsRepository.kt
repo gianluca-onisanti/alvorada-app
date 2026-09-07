@@ -90,6 +90,64 @@ class PointsRepository(private val db: AlvoradaDatabase) {
         )
     }
 
+    /**
+     * Credita um item de checklist marcado.
+     *
+     * Sempre valor cheio: um checklist não tem prazo de foto correndo, então não há
+     * "tarde" a descontar. Quem não cumpriu dentro da rodada simplesmente não
+     * pontuou — e a rodada expirada não custa nada além disso.
+     *
+     * Idempotente pelo estado do item, do mesmo jeito que [awardMission] é pela
+     * instância: marcar, desmarcar e marcar de novo credita uma vez só.
+     */
+    suspend fun awardChecklistItem(stateId: Long, xp: Int, coins: Int) {
+        if (db.pointsDao().countForChecklistItemState(stateId) > 0) {
+            Log.i(TAG, "Item de checklist $stateId já pontuado — ignorando")
+            return
+        }
+        db.pointsDao().insert(
+            PointsLedgerEntity(
+                timestamp = System.currentTimeMillis(),
+                xpDelta = xp,
+                coinDelta = coins,
+                reason = PointsReason.CHECKLIST_ITEM,
+                checklistItemStateId = stateId,
+            )
+        )
+    }
+
+    /**
+     * Bônus de rodada fechada — o análogo do dia perfeito, para checklists.
+     *
+     * Existe porque a soma dos itens não recompensa o que o checklist realmente pede:
+     * fechar a lista **inteira** dentro do período. Sem ele, marcar 9 de 10 itens
+     * valeria 90% do prêmio, e o décimo — justamente o chato — não valeria nada de
+     * especial.
+     *
+     * Não entra na sequência: a regra dos 70% conta missões de despertador, e um
+     * checklist mensal de doze itens vencendo num dia distorceria a conta do dia
+     * inteiro. Ver `PanelDao.getTallies`, que consulta só `mission_instances`.
+     */
+    suspend fun awardChecklistComplete(
+        cycleId: Long,
+        xp: Int = CHECKLIST_BONUS_XP,
+        coins: Int = CHECKLIST_BONUS_COINS,
+    ) {
+        if (db.pointsDao().countForChecklistCycle(cycleId) > 0) {
+            Log.i(TAG, "Rodada $cycleId já bonificada — ignorando")
+            return
+        }
+        db.pointsDao().insert(
+            PointsLedgerEntity(
+                timestamp = System.currentTimeMillis(),
+                xpDelta = xp,
+                coinDelta = coins,
+                reason = PointsReason.CHECKLIST_COMPLETE,
+                checklistCycleId = cycleId,
+            )
+        )
+    }
+
     suspend fun awardPerfectDay(xp: Int = PERFECT_DAY_XP, coins: Int = PERFECT_DAY_COINS) {
         db.pointsDao().insert(
             PointsLedgerEntity(
@@ -221,5 +279,15 @@ class PointsRepository(private val db: AlvoradaDatabase) {
 
         /** Fração das moedas paga quando a missão fecha fora do prazo. */
         const val LATE_COIN_RATIO = 0.6f
+
+        /**
+         * Bônus por fechar uma rodada de checklist inteira.
+         *
+         * Deliberadamente menor que o dia perfeito (25): um checklist diário fecha
+         * todo dia, e pagar o mesmo faria dele o caminho mais barato de subir de
+         * nível, esvaziando a missão com foto — que é a mecânica central do app.
+         */
+        const val CHECKLIST_BONUS_XP = 15
+        const val CHECKLIST_BONUS_COINS = 15
     }
 }

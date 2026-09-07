@@ -36,9 +36,13 @@ class DailySweepWorker(
             // avaliação da sequência veja o dia já no estado final.
             val closed = container.missionRepository.sweepStale()
             container.pointsRepository.evaluateStreak()
+            // As rodadas de checklist viram aqui, e **antes** do reagendamento: fechar
+            // uma rodada destrava os despertadores que ela calava, e a supressão
+            // precisa estar atualizada quando os alarmes forem reafirmados abaixo.
+            val cycles = container.checklistRepository.sweepCycles()
             // Rede de segurança: reafirma os agendamentos caso algum tenha se perdido.
             container.alarmScheduler.rescheduleAll()
-            Log.i(TAG, "Varredura diária concluída ($closed fechada[s])")
+            Log.i(TAG, "Varredura diária concluída ($closed fechada[s], $cycles rodada[s])")
             Result.success()
         }.getOrElse {
             Log.e(TAG, "Varredura diária falhou", it)

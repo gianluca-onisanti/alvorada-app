@@ -87,6 +87,21 @@ data class AlarmEntity(
      * sem nenhuma rotina de limpeza para esquecer de chamar.
      */
     val skipNextFireAt: Long? = null,
+    /**
+     * Epoch millis em que a supressão por checklist deixa de valer — o fim da rodada
+     * que calou este despertador. Enquanto o instante não chegar, todo disparo
+     * anterior a ele é ignorado.
+     *
+     * Guardar o instante, e não um `suprimido: Boolean`, é o mesmo princípio de
+     * [skipNextFireAt] pelo mesmo motivo: o valor caduca sozinho quando a rodada
+     * vira, sem nenhuma rotina de limpeza para alguém esquecer de chamar.
+     *
+     * São campos distintos porque respondem a coisas distintas. [skipNextFireAt] é um
+     * gesto manual sobre **um** toque; este é consequência de um item marcado, e
+     * precisa cobrir **vários** toques — um checklist semanal num despertador diário
+     * tem sete para calar, e um instante só não daria conta.
+     */
+    val suppressedUntil: Long? = null,
     val createdAt: Long,
 )
 
@@ -236,6 +251,14 @@ data class PointsLedgerEntity(
     val reason: PointsReason,
     val missionInstanceId: Long? = null,
     val rewardId: Long? = null,
+    /**
+     * Guarda de idempotência dos créditos de checklist, no papel que
+     * [missionInstanceId] cumpre para missões: marcar e desmarcar o mesmo item não
+     * pode pontuar duas vezes.
+     */
+    val checklistItemStateId: Long? = null,
+    /** Guarda do bônus de rodada fechada. Uma rodada credita o bônus uma vez só. */
+    val checklistCycleId: Long? = null,
 )
 
 @Entity(tableName = "rewards")
@@ -267,4 +290,182 @@ data class StreakStateEntity(
     val shieldsAvailable: Int = 2,
     /** ISO `yyyy-MM-dd` do último dia já avaliado pela varredura diária. */
     val lastEvaluatedDate: String? = null,
+)
+
+// ---------------------------------------------------------------------------
+// Checklists
+//
+// Boa parte dos despertadores é, na prática, uma lista recorrente: escovar os
+// dentes todo dia, limpar a mesa toda semana, limpar o teclado todo mês. Modelar
+// isso como missão pendurada num despertador força um despertador por item e não
+// tem noção de ciclo nem de vencimento.
+//
+// O paralelo com o que já existe é quase exato, e os nomes seguem esse paralelo:
+//   `checklists`           está para `alarms`
+//   `checklist_items`      está para `missions`
+//   `checklist_cycles`     está para `alarm_occurrences`
+//   `checklist_item_states` está para `mission_instances`
+//
+// A diferença que justifica tabelas próprias em vez de reúso: a rodada de um
+// checklist é um intervalo com vencimento, não um instante de disparo, e ela
+// existe mesmo em dia nenhum despertador tocar.
+// ---------------------------------------------------------------------------
+
+/**
+ * Uma lista recorrente com vencimento.
+ *
+ * A recorrência entra **achatada em colunas**, exatamente como em [AlarmEntity], e
+ * não como JSON: é o que mantém `daysMask` consultável em SQL e o que permite
+ * reusar o `Recurrence` de `core` sem serializá-lo. Ver `Recurrences.kt`.
+ *
+ * A categoria reusa `folders`, a mesma de despertadores. Uma categoria é uma
+ * categoria — dois conceitos paralelos de agrupamento seriam pior do que a
+ * consequência de compartilhar um, que é: apagar a pasta apaga os checklists dela
+ * junto com os despertadores.
+ */
+@Entity(
+    tableName = "checklists",
+    foreignKeys = [
+        ForeignKey(
+            entity = FolderEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["folderId"],
+            onDelete = ForeignKey.CASCADE,
+        )
+    ],
+    indices = [Index("folderId")],
+)
+@Serializable
+data class ChecklistEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val folderId: Long,
+    val name: String,
+    val repeatKind: RepeatKind = RepeatKind.WEEKLY,
+    val daysMask: Int = 0,
+    val intervalWeeks: Int = 2,
+    /** ISO `yyyy-MM-dd`. Semana de referência da contagem de [intervalWeeks]. */
+    val anchorDate: String? = null,
+    val ordinalMask: Int = 0,
+    val monthDaysMask: Int = 0,
+    /** Hora do vencimento dentro do dia da rodada. É o que a tela mostra em destaque. */
+    val dueHour: Int = 22,
+    val dueMinute: Int = 0,
+    val sortOrder: Int = 0,
+    val enabled: Boolean = true,
+    val createdAt: Long,
+)
+
+/**
+ * Um item da lista, com ou sem despertador próprio.
+ *
+ * `alarmId` nulo é o caso comum e explicitamente suportado: nem todo item merece
+ * acordar alguém. Quando existe, apagar o despertador **não** pode levar o item
+ * junto — daí `SET NULL` em vez de `CASCADE`; o item continua na lista, só perde o
+ * lembrete.
+ */
+@Entity(
+    tableName = "checklist_items",
+    foreignKeys = [
+        ForeignKey(
+            entity = ChecklistEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["checklistId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+        ForeignKey(
+            entity = AlarmEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["alarmId"],
+            onDelete = ForeignKey.SET_NULL,
+        ),
+    ],
+    indices = [Index("checklistId"), Index("alarmId")],
+)
+@Serializable
+data class ChecklistItemEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val checklistId: Long,
+    val title: String,
+    val notes: String = "",
+    /** `null` = item sem despertador, marcado à mão quando der. */
+    val alarmId: Long? = null,
+    val xpValue: Int = MissionEntity.DEFAULT_XP,
+    val coinValue: Int = MissionEntity.DEFAULT_COINS,
+    val sortOrder: Int = 0,
+    val archived: Boolean = false,
+) {
+    /** Vale o padrão nos dois? Então não há nada a dizer sobre o valor deste item. */
+    val hasDefaultValue: Boolean
+        get() = xpValue == MissionEntity.DEFAULT_XP && coinValue == MissionEntity.DEFAULT_COINS
+}
+
+/**
+ * Uma rodada concreta de um checklist.
+ *
+ * O índice único em (`checklistId`, `periodStart`) é o que torna a abertura de
+ * rodada idempotente — abrir a mesma rodada duas vezes é impossível, do mesmo jeito
+ * que `countForOccurrence` protege a materialização de missões. Sem ele, abrir a
+ * tela duas vezes no mesmo dia criaria duas rodadas e o progresso se dividiria entre
+ * elas.
+ */
+@Entity(
+    tableName = "checklist_cycles",
+    foreignKeys = [
+        ForeignKey(
+            entity = ChecklistEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["checklistId"],
+            onDelete = ForeignKey.CASCADE,
+        )
+    ],
+    indices = [
+        Index(value = ["checklistId", "periodStart"], unique = true),
+        Index("status"),
+    ],
+)
+@Serializable
+data class ChecklistCycleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val checklistId: Long,
+    /** ISO `yyyy-MM-dd` do dia em que a rodada começou. */
+    val periodStart: String,
+    /** Epoch millis do vencimento: até quando dá para cumprir sem atraso. */
+    val dueAt: Long,
+    /** Epoch millis do início da rodada seguinte. É até aqui que o alarme fica calado. */
+    val endsAt: Long,
+    val status: ChecklistCycleStatus = ChecklistCycleStatus.OPEN,
+    val completedAt: Long? = null,
+)
+
+/** O estado de um item numa rodada. Análogo de `mission_instances`. */
+@Entity(
+    tableName = "checklist_item_states",
+    foreignKeys = [
+        ForeignKey(
+            entity = ChecklistCycleEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["cycleId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+        ForeignKey(
+            entity = ChecklistItemEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["itemId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["cycleId", "itemId"], unique = true),
+        Index("itemId"),
+    ],
+)
+@Serializable
+data class ChecklistItemStateEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val cycleId: Long,
+    val itemId: Long,
+    val done: Boolean = false,
+    val doneAt: Long? = null,
+    val xpAwarded: Int = 0,
+    val coinAwarded: Int = 0,
 )

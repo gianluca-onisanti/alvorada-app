@@ -4,6 +4,10 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import dev.gianluca.alvoradaapp.data.AlarmEntity
+import dev.gianluca.alvoradaapp.data.ChecklistCycleEntity
+import dev.gianluca.alvoradaapp.data.ChecklistEntity
+import dev.gianluca.alvoradaapp.data.ChecklistItemEntity
+import dev.gianluca.alvoradaapp.data.ChecklistItemStateEntity
 import dev.gianluca.alvoradaapp.data.EvidencePhotoEntity
 import dev.gianluca.alvoradaapp.data.FolderEntity
 import dev.gianluca.alvoradaapp.data.MissionEntity
@@ -56,6 +60,10 @@ data class BackupEnvelope(
     val rewards: List<RewardEntity> = emptyList(),
     val redemptions: List<RewardRedemptionEntity> = emptyList(),
     val streak: StreakStateEntity? = null,
+    val checklists: List<ChecklistEntity> = emptyList(),
+    val checklistItems: List<ChecklistItemEntity> = emptyList(),
+    val checklistCycles: List<ChecklistCycleEntity> = emptyList(),
+    val checklistItemStates: List<ChecklistItemStateEntity> = emptyList(),
 )
 
 sealed interface BackupResult {
@@ -121,6 +129,10 @@ class BackupManager(
                 rewards = dao.rewards(),
                 redemptions = dao.redemptions(),
                 streak = dao.streak(),
+                checklists = dao.checklists(),
+                checklistItems = dao.checklistItems(),
+                checklistCycles = dao.checklistCycles(),
+                checklistItemStates = dao.checklistItemStates(),
             )
 
             var written = 0
@@ -226,6 +238,10 @@ class BackupManager(
                 rewards = data.rewards,
                 redemptions = data.redemptions,
                 streak = data.streak,
+                checklists = data.checklists,
+                checklistItems = data.checklistItems,
+                checklistCycles = data.checklistCycles,
+                checklistItemStates = data.checklistItemStates,
             )
 
             BackupResult.Imported(restoredPhotos.size, data.alarms.size)
@@ -277,7 +293,15 @@ class BackupManager(
          * o número sobe para que uma versão antiga do app recuse um arquivo novo em
          * vez de restaurá-lo pela metade.
          */
-        const val FORMAT_VERSION = 2
+        /**
+         * 3 traz as quatro tabelas de checklist.
+         *
+         * Subir o número é o que faz uma versão anterior do app **recusar** o
+         * arquivo em vez de restaurá-lo pela metade: os campos novos são opcionais
+         * na desserialização, então sem o número ela aceitaria o backup e perderia
+         * os checklists em silêncio.
+         */
+        const val FORMAT_VERSION = 3
         const val MANIFEST = "alvorada-backup.json"
 
         /**

@@ -18,6 +18,7 @@ App pessoal, sem loja e sem servidor: tudo mora no aparelho, distribuído por AP
 - [Dois tipos de despertador](#dois-tipos-de-despertador)
 - [Desligar: totalmente ou só a próxima](#desligar-totalmente-ou-só-a-próxima)
 - [Repetição: quatro modos](#repetição-quatro-modos)
+- [Checklists](#checklists)
 - [Pontos, níveis e sequência](#pontos-níveis-e-sequência)
 - [Backup](#backup)
 - [Decisões de design](#decisões-de-design)
@@ -90,15 +91,16 @@ ou um arrasto da borda esquerda:
 | -------------- | ----------------------------------------------------------------------------------------------------- |
 | **Painel**     | A home. Fração de missões do dia, nível, moedas, sequência, faixa dos últimos 7 dias e o que falta.   |
 | **Relógio**    | Seus despertadores, agrupados por categoria. É onde se cria e edita alarme e missão.                  |
+| **Checklists** | Listas recorrentes com vencimento. Marcar um item cala o despertador dele até a próxima rodada.       |
 | **Evidências** | A dívida fotográfica: o que falta com o prazo correndo, e o que já foi entregue hoje com miniaturas.  |
 | **Galeria**    | Todas as fotos, agrupadas por dia, categoria ou despertador.                                          |
 | **Prêmios**    | A loja. Recompensas que você cadastra com um preço em moedas, e o histórico de resgates.              |
 | **Ajustes**    | Permissões, tema, backup e o teste de fogo do despertador.                                            |
 
-As **três primeiras** também ficam na barra de baixo, porque são o ciclo diário e às 6h da
+As **quatro primeiras** também ficam na barra de baixo, porque são o ciclo diário e às 6h da
 manhã o que se usa todo dia tem que estar a um toque, não a dois: o despertador cria a
-dívida, Evidências a liquida, o Painel mostra o placar. Galeria, Prêmios e Ajustes se abrem
-em dias raros e vivem só no menu.
+dívida, Checklists e Evidências a liquidam, o Painel mostra o placar. Galeria, Prêmios e
+Ajustes se abrem em dias raros e vivem só no menu.
 
 Até a V1 eram cinco abas numa barra, e Ajustes era uma chave escondida no cabeçalho do
 Painel. Cinco era o teto do que cabe numa barra sem virar sopa de ícone, e a V2 acrescenta
@@ -277,6 +279,107 @@ O editor mostra uma prévia de **próximo disparo**. Ela existe para este bloco 
 recorrência de calendário é fácil de configurar errado e impossível de conferir de cabeça.
 Confira a data ali, em vez de descobrir daqui a três semanas que não tocou.
 
+## Checklists
+
+Boa parte dos despertadores é, na prática, uma lista que se repete: escovar os dentes todo
+dia, limpar a mesa toda semana, limpar o teclado todo mês. A V1 só sabia modelar isso como
+missão pendurada num despertador — o que forçava um despertador por item e não tinha noção
+de ciclo nem de vencimento.
+
+Um **checklist** é uma lista com frequência própria, um horário de vencimento e uma
+categoria. Cada **item** pode ter um despertador vinculado, ou nenhum.
+
+```mermaid
+flowchart TD
+    A["Rodada abre<br/>diária, semanal, quinzenal ou mensal"] --> B["Itens em aberto<br/>com o vencimento à vista"]
+    B --> C{Marquei o item}
+    C --> D["XP + moedas no extrato"]
+    C --> E{Todos os itens<br/>do despertador feitos?}
+    E -->|Sim| F["O despertador se cala<br/>até a rodada virar"]
+    E -->|Não| G["Ele continua tocando<br/>ainda há o que cobrar"]
+    B --> H{Rodada vira sem<br/>tudo marcado}
+    H --> I["Rodada expirada<br/>não custa nada além dos pontos não ganhos"]
+    D --> J{Lista inteira fechada?}
+    J -->|Sim| K["Bônus de rodada<br/>+15 XP · +15 moedas"]
+```
+
+### Frequência
+
+Os mesmos quatro modos do despertador, reusados sem uma linha de adaptação — porque são
+exatamente o que um checklist precisa:
+
+| O que você quer      | Como configurar                              |
+| -------------------- | -------------------------------------------- |
+| **Diário**           | Semanal, com todos os dias marcados           |
+| **Semanal**          | Semanal, com um dia marcado                   |
+| **Quinzenal**        | A cada 2 semanas, com uma âncora              |
+| **Mensal**           | Dias do mês (dia 15) ou semana do mês (1ª segunda) |
+
+**A rodada vale até a seguinte começar, não até vencer.** Um checklist diário que vence às
+22h continua sendo o de hoje até a meia-noite: depois das 22h ele aparece como vencido, mas
+ainda dá para marcar. Calar o despertador só até as 22h o faria tocar de novo à noite por
+algo que já foi feito.
+
+### Marcar cala o despertador
+
+Marcar um item cala o despertador dele **até a próxima rodada** — e desmarcar o destrava.
+
+A regra exata é: o despertador se cala quando **todos** os itens que apontam para ele
+estiverem marcados. Se ele serve a dois itens e só um foi feito, ele ainda tem o que
+cobrar. Quando um despertador recebe itens de checklists de tamanhos diferentes, o silêncio
+vale até a **primeira** rodada virar.
+
+O que fica gravado é o instante em que o silêncio expira
+([`suppressedUntil`](app/src/main/java/dev/gianluca/alvoradaapp/data/Entities.kt)), e não um
+sinalizador — o mesmo princípio de `skipNextFireAt`, pelo mesmo motivo: o valor caduca
+sozinho quando a rodada vira, sem nenhuma rotina de limpeza para alguém esquecer de chamar.
+
+São campos separados porque respondem a coisas diferentes. `skipNextFireAt` é um gesto
+manual sobre **um** toque; `suppressedUntil` é consequência de um item marcado e precisa
+cobrir **vários** — um checklist semanal num despertador diário tem sete para calar, e um
+instante só não daria conta.
+
+A lista de despertadores mostra os dois estados, e por obrigação: a regra da V1 é que não
+existe despertador que não toca sem explicação. A diferença é que o silêncio por checklist
+não oferece "desfazer" — quem calou foi o item, e o caminho de destravar é desmarcá-lo.
+
+### Na tela do alarme
+
+Quando o despertador de um item toca, o item aparece **na própria tela do alarme**, ao lado
+das missões, para ser marcado ali. Mandar alguém abrir outra tela às 6h contraria a mecânica
+inteira do app.
+
+Missões e itens viajam em conjuntos separados até o serviço, e não num só: os ids vêm de
+tabelas diferentes, as duas com autoincremento a partir de 1, e misturá-los faria a missão 5
+marcar também o item 5 — um cumprimento fantasma, difícil de perceber e impossível de
+reproduzir de propósito.
+
+### Pontos, e o que os checklists **não** fazem
+
+Cada item vale XP e moedas próprios, na mesma escala de 5/10/20/40 das missões, e fechar a
+rodada inteira rende um bônus de **+15 XP e +15 moedas**. O bônus existe porque a soma dos
+itens não recompensa o que o checklist realmente pede: sem ele, marcar 9 de 10 valeria 90%
+do prêmio, e o décimo — justamente o chato — não valeria nada de especial. É deliberadamente
+menor que o dia perfeito (25): um checklist diário fecha todo dia, e pagar o mesmo faria
+dele o caminho mais barato de subir de nível, esvaziando a missão com foto.
+
+**Checklists não entram na sequência.** A regra dos 70% conta missões de despertador, e só.
+Um checklist mensal de doze itens vencendo num dia distorceria a conta do dia inteiro e
+poderia derrubar uma sequência longa por algo que nem é sobre acordar. Isso não custou
+código nenhum: `PanelDao.getTallies`, que alimenta a sequência e o dia perfeito, sempre
+consultou apenas `mission_instances`.
+
+**Checklists não exigem foto.** Evidência, prazo de janela e cobrança continuam sendo
+mecânica de missão. Um checklist é uma lista com vencimento, não uma dívida cobrada a toque
+de despertador, e misturar os dois duplicaria a máquina de estados sem ganho claro.
+
+### Não cumprir não dói
+
+Uma rodada que vira sem tudo marcado é fechada como **expirada** pela varredura das 03h, e
+isso é tudo: não custa moeda, não quebra sequência, não fica vermelho. O único efeito é não
+ter rendido os pontos. É a mesma política de "missão não cumprida é informação, não
+repreensão".
+
 ## Pontos, níveis e sequência
 
 | Evento                       | XP        | Moedas                            |
@@ -322,6 +425,11 @@ Um único ZIP, exportado em Ajustes, com `alvorada-backup.json` mais as fotos em
 Isso não é luxo: as evidências moram no diretório privado do app, fora de qualquer backup
 automático do Android. Ótimo para privacidade, péssimo para durabilidade — desinstalar
 apaga meses de registro sem aviso, e este arquivo é a única cópia que sobrevive.
+
+O formato está na **versão 3** — a 3 trouxe as quatro tabelas de checklist. Subir o número
+é o que faz uma versão anterior do app **recusar** o arquivo em vez de restaurá-lo pela
+metade: os campos novos são opcionais na desserialização, então sem o número ela aceitaria o
+backup e perderia os checklists em silêncio.
 
 A restauração **substitui** tudo em vez de mesclar. Mesclar exigiria decidir o que fazer
 com ids repetidos, missões editadas dos dois lados e fotos duplicadas — regras que
@@ -467,6 +575,8 @@ A Activity é só a cara do que o serviço está fazendo — por isso fechá-la 
 | Tema: cores, formas, tipografia                     | [Color.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/theme/Color.kt) · [Shape.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/theme/Shape.kt) · [Type.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/theme/Type.kt) · [Theme.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/theme/Theme.kt) |
 | Menu lateral e barra superior                       | [NavDrawer.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/components/NavDrawer.kt) · [TopBar.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/components/TopBar.kt) |
 | Fundo e superfície de vidro                         | [Bits.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/components/Bits.kt) |
+| Matemática de rodada (pura, testada)                | [ChecklistCycle.kt](app/src/main/java/dev/gianluca/alvoradaapp/core/ChecklistCycle.kt) |
+| Checklists: rodadas, marcação e supressão           | [ChecklistRepository.kt](app/src/main/java/dev/gianluca/alvoradaapp/data/ChecklistRepository.kt) |
 
 **Convenções do schema:** instantes absolutos são epoch millis (`Long`); datas civis são
 `String` ISO `yyyy-MM-dd`, que ordena lexicograficamente e serve direto como chave de
@@ -476,6 +586,14 @@ agrupamento na galeria; dias da semana são bitmask `Int`, bit 0 = segunda.
 disparo grava uma `alarm_occurrence`, que materializa `mission_instances` no dia; cada
 instância acumula `evidence_photos` e credita `points_ledger`; `rewards` e
 `reward_redemptions` gastam o saldo; `streak_state` é uma linha só.
+
+Os checklists espelham essa estrutura com outro relógio: `checklists` está para `alarms`,
+`checklist_items` para `missions`, `checklist_cycles` para `alarm_occurrences` e
+`checklist_item_states` para `mission_instances`. Ganharam tabelas próprias em vez de reúso
+porque a rodada de um checklist é um **intervalo com vencimento**, e não um instante de
+disparo — e ela existe mesmo num dia em que nenhum despertador toca. A categoria, essa sim,
+é compartilhada: `checklists` aponta para a mesma tabela `folders` dos despertadores, porque
+uma categoria é uma categoria.
 
 **Identidade.** O `applicationId` e o pacote Kotlin são `dev.gianluca.alvoradaapp`,
 renomeados a partir do antigo `dev.gianluca.wakeapp`. O Android trata `applicationId`
@@ -515,9 +633,14 @@ precisa desenhar a hora com o aparelho em modo avião, sem rede e sem Play Servi
 ./gradlew testDebugUnitTest
 ```
 
-58 testes cobrindo o que é puro e onde moram os erros que só apareceriam meses depois:
+73 testes cobrindo o que é puro e onde moram os erros que só apareceriam meses depois:
 cálculo de próximo disparo, os quatro modos de recorrência, a data única do autodestruível,
-o pulo de um toque, bitmask de dias, curva de nível e regras de sequência.
+o pulo de um toque, a supressão por checklist, a matemática de rodada, bitmask de dias, curva
+de nível e regras de sequência.
+
+Vale destacar dois: `dia 31 atravessa os meses que nao tem dia 31` e `ultimo dia do mes
+acompanha o tamanho do mes`. São exatamente o tipo de erro que passaria despercebido por
+meses e apareceria num fevereiro qualquer.
 
 ### No aparelho
 
@@ -643,6 +766,32 @@ corrompido não pode destruir o que já existe.
 O teste 52 é o que mais importa dos novos: o tema tem duas portas de entrada, e é a segunda
 que serve a única tela que **precisa** funcionar.
 
+**Checklists** — configure um diário com 3 itens, um deles vinculado a um despertador
+próximo.
+
+| #  | Teste                                                                    | Esperado                                                        |
+| -- | ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| 56 | Abrir Checklists                                                         | A rodada de hoje aparece com o vencimento e a contagem regressiva |
+| 57 ★ | Marcar o item com despertador                                          | A linha dele no Relógio diz "Checklist cumprido · volta em…", e ele **não toca** |
+| 58 | Desmarcar o mesmo item                                                   | O despertador volta a aparecer normal e toca de novo             |
+| 59 | Marcar os três itens                                                     | Rodada fecha; +15 XP e +15 moedas no extrato                     |
+| 60 ★ | Marcar e desmarcar o mesmo item cinco vezes                            | **Um** crédito no extrato, não cinco                             |
+| 61 | Ajustes → "Rodar agora", com o dia já virado                             | Rodada nova abre limpa e o despertador volta a tocar             |
+| 62 ★ | Checklist **semanal** com despertador **diário**, marcar o item        | Os sete toques ficam calados até a semana virar, não só um       |
+| 63 | Vincular **dois** itens ao mesmo despertador e marcar só um             | Ele **continua tocando** — ainda há o que cobrar                 |
+| 64 | Marcar o segundo também                                                  | Aí sim ele se cala                                               |
+| 65 ★ | Reiniciar o celular com um item marcado                                | A supressão sobrevive ao reagendamento em massa                  |
+| 66 ★ | Apagar um checklist que tinha item marcado                             | O despertador **volta a tocar** — não fica mudo para sempre      |
+| 67 | Apagar o despertador vinculado a um item                                 | O item sobrevive na lista, sem despertador                       |
+| 68 | Deixar o despertador de um item tocar                                    | O item aparece na tela do alarme e dá para marcar ali            |
+| 69 | Deixar uma rodada vencer sem tudo marcado                                | Vira expirada; a **sequência não se mexe**                       |
+| 70 | Exportar e restaurar backup                                              | Checklists, rodadas e marcações voltam íntegros                  |
+
+Os testes 62, 63 e 66 são os que mais importam. O 62 é o caso que o mecanismo de pulo antigo
+não resolveria; o 63 é a regra de que o despertador só se cala com **todos** os itens dele
+feitos; o 66 é a classe de falha mais assustadora que este app pode ter — um despertador que
+não toca e ninguém sabe por quê.
+
 Logs úteis durante os testes:
 
 ```bash
@@ -692,7 +841,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 O build debug leva o sufixo `.debug` no `applicationId`, então a versão de debug e a de
 release convivem no mesmo aparelho.
 
-**Migrations.** O banco está na **versão 5** e o schema é exportado para
+**Migrations.** O banco está na **versão 6** e o schema é exportado para
 [`app/schemas/`](app/schemas/). A partir da versão 3 toda mudança exige migration explícita
 — `fallbackToDestructiveMigration` vale só para downgrade, então avançar sem migration é
 erro de build, não perda silenciosa de dados. Exporte um backup antes de instalar uma
@@ -705,7 +854,7 @@ erros aparecem meses depois; o resto se verifica mais barato no aparelho.
 ## Limitações e próximos passos
 
 - **Os números da gamificação foram escolhidos no escuro.** XP por missão, limiar de 70%,
-  60% de moedas no atraso, custo da soneca — depois de algumas semanas de uso dá para saber
+  60% de moedas no atraso, custo da soneca, bônus de rodada de checklist — depois de algumas semanas de uso dá para saber
   se o app está frouxo ou punitivo demais.
 - **O backup é manual.** Um `WorkManager` semanal gravando numa pasta escolhida uma vez
   resolveria o esquecimento, que é o modo de falha real de backup manual.
@@ -716,15 +865,8 @@ erros aparecem meses depois; o resto se verifica mais barato no aparelho.
 
 ### O que vem na V2
 
-O redesign e o menu lateral já estão aqui. Faltam duas frentes, nesta ordem:
+O redesign, o menu lateral e os checklists já estão aqui. Falta uma frente:
 
-- **Checklists.** Boa parte dos despertadores é, na prática, um checklist diário, semanal ou
-  mensal — e hoje o app só sabe modelar isso como missão pendurada num despertador, o que
-  força um despertador por item e não tem noção de ciclo nem de vencimento. A ideia é um
-  checklist com frequência própria (reusando os quatro modos de repetição que já existem),
-  categorias, ordem, e a regra de que marcar o item cala o despertador dele até a próxima
-  rodada. Checklists dão XP e moedas, mas **ficam fora da regra dos 70%**: um checklist mensal
-  de doze itens vencendo num dia distorceria a conta do dia inteiro.
 - **Biblioteca de áudio.** Colar uma URL, baixar o áudio em boa qualidade, cortar o trecho
   exato com waveform e pré-escuta em loop, e guardar tudo numa pasta visível em
   `Music/Alvorada/`. Hoje pôr um som novo no despertador exige baixar no computador, converter

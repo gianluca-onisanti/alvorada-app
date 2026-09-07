@@ -244,4 +244,79 @@ class NextFireCalculatorTest {
         assertEquals(unico, outlook.skipped)
         assertNull(outlook.nextFire)
     }
+
+    // ---- supressão por checklist
+
+    @Test
+    fun `supressao pula todos os toques ate o fim da rodada`() {
+        // Despertador diário às 7h, calado por um checklist semanal até segunda.
+        // O pulo de um toque só não daria conta destes sete.
+        val from = at("2026-08-05T10:00")
+        val ate = at("2026-08-10T00:00").toInstant().toEpochMilli()
+        val outlook = NextFireCalculator.outlook(
+            hour = 7,
+            minute = 0,
+            recurrence = Recurrence.weekly(DayMask.EVERY_DAY),
+            from = from,
+            skipFireAt = null,
+            suppressedUntil = ate,
+        )
+        assertEquals(at("2026-08-10T07:00").toInstant().toEpochMilli(), outlook.nextFire)
+        assertEquals(ate, outlook.suppressedUntil)
+        assertFalse(outlook.isSkipping)
+    }
+
+    @Test
+    fun `supressao vencida deixa de valer sozinha`() {
+        // O instante já passou: nada a limpar, o valor simplesmente para de
+        // significar alguma coisa — o mesmo princípio de `skipNextFireAt`.
+        val from = at("2026-08-05T10:00")
+        val ate = at("2026-08-04T00:00").toInstant().toEpochMilli()
+        val outlook = NextFireCalculator.outlook(
+            hour = 22,
+            minute = 0,
+            recurrence = Recurrence.weekly(DayMask.EVERY_DAY),
+            from = from,
+            skipFireAt = null,
+            suppressedUntil = ate,
+        )
+        assertEquals(at("2026-08-05T22:00").toInstant().toEpochMilli(), outlook.nextFire)
+        assertNull(outlook.suppressedUntil)
+    }
+
+    @Test
+    fun `sem supressao o comportamento antigo nao muda`() {
+        val from = at("2026-08-05T10:00")
+        val outlook = NextFireCalculator.outlook(
+            hour = 22,
+            minute = 0,
+            recurrence = Recurrence.weekly(DayMask.EVERY_DAY),
+            from = from,
+            skipFireAt = null,
+            suppressedUntil = null,
+        )
+        assertEquals(at("2026-08-05T22:00").toInstant().toEpochMilli(), outlook.nextFire)
+        assertNull(outlook.suppressedUntil)
+        assertFalse(outlook.isSuppressed)
+    }
+
+    @Test
+    fun `pulo e supressao convivem`() {
+        // Calado até domingo, e o toque de domingo também foi pulado à mão: sobra
+        // o de segunda. São mecanismos distintos e os dois valem ao mesmo tempo.
+        val from = at("2026-08-05T10:00")
+        val ate = at("2026-08-09T00:00").toInstant().toEpochMilli()
+        val domingo = at("2026-08-09T07:00").toInstant().toEpochMilli()
+        val outlook = NextFireCalculator.outlook(
+            hour = 7,
+            minute = 0,
+            recurrence = Recurrence.weekly(DayMask.EVERY_DAY),
+            from = from,
+            skipFireAt = domingo,
+            suppressedUntil = ate,
+        )
+        assertEquals(domingo, outlook.skipped)
+        assertEquals(ate, outlook.suppressedUntil)
+        assertEquals(at("2026-08-10T07:00").toInstant().toEpochMilli(), outlook.nextFire)
+    }
 }

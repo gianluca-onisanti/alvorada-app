@@ -100,6 +100,36 @@ class AlarmRepository(
     }
 
     /**
+     * Cala este despertador até [until] — o fim da rodada do checklist que o calou.
+     *
+     * Mora aqui, e não no `ChecklistRepository`, pela invariante desta classe: toda
+     * escrita em `alarms` tem efeito colateral obrigatório no `AlarmManager`, e
+     * gravar a coluna sem reagendar deixaria o banco dizendo uma coisa e o sistema
+     * fazendo outra — o despertador tocaria por algo já feito.
+     *
+     * Não confundir com [skipNextFire]: aquilo é um gesto manual sobre um toque, isto
+     * cobre todos os toques até a rodada virar. Ver `AlarmEntity.suppressedUntil`.
+     */
+    suspend fun suppressUntil(alarmId: Long, until: Long) {
+        val alarm = db.alarmDao().getById(alarmId) ?: return
+        // Grava o valor recebido, sem compará-lo com o anterior: quem chama é o
+        // `ChecklistRepository`, que recalcula a supressão inteira a partir de todos
+        // os itens do despertador. Um `maxOf` defensivo aqui impediria justamente a
+        // correção para menos — apagar um item deixaria o alarme calado a mais.
+        if (until == alarm.suppressedUntil) return
+        db.alarmDao().setSuppressedUntil(alarmId, until)
+        scheduler.scheduleNextWake(alarm.copy(suppressedUntil = until))
+    }
+
+    /** Destrava o despertador. Chamado ao desmarcar o item e ao apagar o checklist. */
+    suspend fun clearSuppression(alarmId: Long) {
+        val alarm = db.alarmDao().getById(alarmId) ?: return
+        if (alarm.suppressedUntil == null) return
+        db.alarmDao().setSuppressedUntil(alarmId, null)
+        scheduler.scheduleNextWake(alarm.copy(suppressedUntil = null))
+    }
+
+    /**
      * Autodestruição do despertador de uma vez só.
      *
      * Chamado pelo serviço quando o toque termina — dispensado ou silenciado sozinho.

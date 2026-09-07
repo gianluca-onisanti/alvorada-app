@@ -12,6 +12,7 @@ import dev.gianluca.alvoradaapp.data.MissionRepository
 import dev.gianluca.alvoradaapp.data.PanelRepository
 import dev.gianluca.alvoradaapp.data.PointsRepository
 import dev.gianluca.alvoradaapp.data.AlvoradaDatabase
+import dev.gianluca.alvoradaapp.data.ChecklistRepository
 import dev.gianluca.alvoradaapp.evidence.EvidenceStore
 import dev.gianluca.alvoradaapp.work.DailySweepWorker
 import kotlinx.coroutines.CoroutineScope
@@ -43,6 +44,10 @@ class AppContainer(context: Context) {
 
     val missionRepository: MissionRepository by lazy {
         MissionRepository(db, alarmScheduler, evidenceStore, pointsRepository)
+    }
+
+    val checklistRepository: ChecklistRepository by lazy {
+        ChecklistRepository(db, alarmRepository, pointsRepository)
     }
 
     val panelRepository: PanelRepository by lazy { PanelRepository(db) }

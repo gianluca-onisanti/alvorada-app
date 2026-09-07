@@ -11,6 +11,7 @@ import android.os.PowerManager
 import android.util.Log
 import dev.gianluca.alvoradaapp.AlvoradaApp
 import dev.gianluca.alvoradaapp.data.AlarmEntity
+import dev.gianluca.alvoradaapp.data.ChecklistItemRun
 import dev.gianluca.alvoradaapp.data.MissionEntity
 import dev.gianluca.alvoradaapp.data.MissionRun
 import dev.gianluca.alvoradaapp.data.OccurrenceEntity
@@ -43,6 +44,15 @@ data class RingingState(
     val missions: List<MissionEntity> = emptyList(),
     /** Cobrança: só as missões cuja janela de evidência estourou. */
     val chaseRuns: List<MissionRun> = emptyList(),
+    /**
+     * Itens de checklist vinculados a este despertador e ainda não marcados nesta
+     * rodada.
+     *
+     * Aparecem na tela do alarme pela mesma razão das missões: mandar alguém abrir
+     * outra tela às 6h contraria a mecânica inteira do app, que é mostrar o que foi
+     * prometido no momento em que ele toca.
+     */
+    val checklistItems: List<ChecklistItemRun> = emptyList(),
 ) {
     val canSnooze: Boolean get() = snoozesLeft > 0
 }
@@ -93,7 +103,9 @@ class AlarmService : Service() {
 
             AlarmContract.ACTION_DISMISS -> {
                 val completed = intent.getLongArrayExtra(AlarmContract.EXTRA_COMPLETED_MISSIONS)
-                handleDismiss(completed?.toSet().orEmpty())
+                val checklist =
+                    intent.getLongArrayExtra(AlarmContract.EXTRA_COMPLETED_CHECKLIST_ITEMS)
+                handleDismiss(completed?.toSet().orEmpty(), checklist?.toSet().orEmpty())
                 return START_NOT_STICKY
             }
 
@@ -157,6 +169,9 @@ class AlarmService : Service() {
         val missions = withContext(Dispatchers.IO) {
             container.missionRepository.missionsForToday(alarm.id)
         }
+        val checklistItems = withContext(Dispatchers.IO) {
+            container.checklistRepository.pendingItemsForAlarm(alarm.id)
+        }
 
         _state.value = RingingState(
             mode = mode,
@@ -168,6 +183,7 @@ class AlarmService : Service() {
             snoozesLeft = (alarm.maxSnoozes - occurrence.snoozeCount).coerceAtLeast(0),
             oneShot = alarm.isOneShot,
             missions = missions,
+            checklistItems = checklistItems,
         )
 
         val snoozesLeft = (alarm.maxSnoozes - occurrence.snoozeCount).coerceAtLeast(0)
@@ -303,7 +319,10 @@ class AlarmService : Service() {
         }
     }
 
-    private fun handleDismiss(completedMissions: Set<Long>) {
+    private fun handleDismiss(
+        completedMissions: Set<Long>,
+        completedChecklistItems: Set<Long>,
+    ) {
         val current = _state.value ?: run { shutdown(); return }
         if (current.mode == AlarmMode.TEST) {
             shutdown()
@@ -334,6 +353,17 @@ class AlarmService : Service() {
                     alarmId = current.alarmId,
                     completedNow = completedMissions,
                 )
+
+                // Os itens de checklist marcados na tela do alarme.
+                current.checklistItems
+                    .filter { it.item.id in completedChecklistItems }
+                    .forEach {
+                        container.checklistRepository.toggleItem(
+                            cycleId = it.state.cycleId,
+                            itemId = it.item.id,
+                            done = true,
+                        )
+                    }
                 publishPendingEvidence(current.occurrenceId, current.alarmId)
                 consumeIfOneShot(current)
             }
@@ -543,10 +573,17 @@ class AlarmService : Service() {
 
         fun snooze(context: Context) = send(context, AlarmContract.ACTION_SNOOZE) {}
 
-        fun dismiss(context: Context, completedMissions: Set<Long> = emptySet()) =
-            send(context, AlarmContract.ACTION_DISMISS) {
-                putExtra(AlarmContract.EXTRA_COMPLETED_MISSIONS, completedMissions.toLongArray())
-            }
+        fun dismiss(
+            context: Context,
+            completedMissions: Set<Long> = emptySet(),
+            completedChecklistItems: Set<Long> = emptySet(),
+        ) = send(context, AlarmContract.ACTION_DISMISS) {
+            putExtra(AlarmContract.EXTRA_COMPLETED_MISSIONS, completedMissions.toLongArray())
+            putExtra(
+                AlarmContract.EXTRA_COMPLETED_CHECKLIST_ITEMS,
+                completedChecklistItems.toLongArray(),
+            )
+        }
 
         private fun send(context: Context, action: String, extras: Intent.() -> Unit) {
             context.startService(

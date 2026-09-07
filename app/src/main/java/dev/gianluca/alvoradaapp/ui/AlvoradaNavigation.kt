@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -34,6 +35,9 @@ import dev.gianluca.alvoradaapp.diagnostics.DiagnosticsScreen
 import dev.gianluca.alvoradaapp.ui.alarms.AlarmEditorScreen
 import dev.gianluca.alvoradaapp.ui.alarms.AlarmListScreen
 import dev.gianluca.alvoradaapp.ui.alarms.NEW_ALARM_ID
+import dev.gianluca.alvoradaapp.ui.checklists.ChecklistEditorScreen
+import dev.gianluca.alvoradaapp.ui.checklists.ChecklistScreen
+import dev.gianluca.alvoradaapp.ui.checklists.NEW_CHECKLIST_ID
 import dev.gianluca.alvoradaapp.ui.components.AlvoradaDrawer
 import dev.gianluca.alvoradaapp.ui.components.NavDestination
 import dev.gianluca.alvoradaapp.ui.evidence.EvidenceCameraScreen
@@ -47,12 +51,14 @@ import kotlinx.coroutines.launch
 object Routes {
     const val PANEL = "panel"
     const val ALARMS = "alarms"
+    const val CHECKLISTS = "checklists"
     const val EVIDENCE_BOARD = "evidences"
     const val GALLERY = "gallery"
     const val REWARDS = "rewards"
     const val SETTINGS = "settings"
     const val ALARM_EDITOR = "alarm/{id}?once={once}"
     const val EVIDENCE = "evidence/{instanceId}"
+    const val CHECKLIST_EDITOR = "checklist/{id}"
 
     /**
      * [once] só diz respeito a um despertador **novo**: para um já existente, quem
@@ -60,6 +66,7 @@ object Routes {
      */
     fun alarmEditor(id: Long, once: Boolean = false) = "alarm/$id?once=$once"
     fun evidence(instanceId: Long) = "evidence/$instanceId"
+    fun checklistEditor(id: Long) = "checklist/$id"
 }
 
 /**
@@ -74,6 +81,7 @@ object Routes {
 private val DESTINATIONS = listOf(
     NavDestination(Routes.PANEL, "Painel", Icons.Filled.Dashboard),
     NavDestination(Routes.ALARMS, "Relógio", Icons.Filled.Alarm),
+    NavDestination(Routes.CHECKLISTS, "Checklists", Icons.Filled.Checklist),
     NavDestination(Routes.EVIDENCE_BOARD, "Evidências", Icons.Filled.PhotoCamera),
     NavDestination(Routes.GALLERY, "Galeria", Icons.Filled.PhotoLibrary),
     NavDestination(Routes.REWARDS, "Prêmios", Icons.Filled.Redeem),
@@ -85,11 +93,11 @@ private val DESTINATIONS = listOf(
  *
  * A barra sobreviveu ao menu por causa das 6h da manhã: o que se usa todo dia tem
  * que estar a um toque, e não a dois. Painel, Relógio e Evidências são o ciclo
- * diário — o despertador cria a dívida, a tela de evidências a liquida, o painel
- * mostra o placar. Galeria, Prêmios e Ajustes se abrem em dias raros e ficam só no
- * menu.
+ * diário — o despertador cria a dívida, os checklists e a tela de evidências a
+ * liquidam, o painel mostra o placar. Galeria, Prêmios e Ajustes se abrem em dias
+ * raros e ficam só no menu.
  */
-private const val BOTTOM_BAR_COUNT = 3
+private const val BOTTOM_BAR_COUNT = 4
 
 /** Rotas com chrome: barra superior com menu e barra de baixo. */
 private val CHROME_ROUTES: Set<String> = DESTINATIONS.map { it.route }.toSet()
@@ -165,6 +173,18 @@ fun AlvoradaNavigation(diagnosticsRefreshKey: Int) {
                     )
                 }
 
+                composable(Routes.CHECKLISTS) {
+                    ChecklistScreen(
+                        onEditChecklist = { id ->
+                            navController.navigate(Routes.checklistEditor(id))
+                        },
+                        onCreateChecklist = {
+                            navController.navigate(Routes.checklistEditor(NEW_CHECKLIST_ID))
+                        },
+                        onOpenDrawer = openDrawer,
+                    )
+                }
+
                 composable(Routes.EVIDENCE_BOARD) {
                     EvidenceScreen(
                         onOpenCamera = { id -> navController.navigate(Routes.evidence(id)) },
@@ -212,6 +232,21 @@ fun AlvoradaNavigation(diagnosticsRefreshKey: Int) {
                         instanceId = id,
                         onFinished = { navController.popBackStack() },
                         onCancel = { navController.popBackStack() },
+                    )
+                }
+
+                composable(
+                    route = Routes.CHECKLIST_EDITOR,
+                    // Texto pelo mesmo motivo do editor de despertador: o id de um
+                    // checklist novo é -1, e `NavType.LongType` não aceita negativo
+                    // num segmento de caminho.
+                    arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                ) { entry ->
+                    val id = entry.arguments?.getString("id")?.toLongOrNull()
+                        ?: NEW_CHECKLIST_ID
+                    ChecklistEditorScreen(
+                        checklistId = id,
+                        onDone = { navController.popBackStack() },
                     )
                 }
 
