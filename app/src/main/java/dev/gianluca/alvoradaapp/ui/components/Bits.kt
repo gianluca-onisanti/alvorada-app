@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.gianluca.alvoradaapp.ui.theme.GLASS_ALPHA
 import dev.gianluca.alvoradaapp.ui.theme.GLASS_BORDER_ALPHA
 import dev.gianluca.alvoradaapp.ui.theme.GLASS_SHEEN_ALPHA
@@ -136,6 +137,10 @@ fun SectionTitle(
             text = text.uppercase(),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
+            // O tracking largo vive aqui, e não no token: este é o único texto do app
+            // curto o bastante, e com a linha inteira só para si, para ganhar com ele
+            // sem custar quebra de linha em outro lugar.
+            letterSpacing = 1.4.sp,
             color = color,
             modifier = Modifier.weight(1f),
         )

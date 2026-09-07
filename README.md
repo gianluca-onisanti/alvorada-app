@@ -490,6 +490,24 @@ que apps do tipo NewPipe não estão na Play Store. Para este caso (app pessoal,
 APK, sem loja) isso não impede nada, mas fecha a porta da Play Store enquanto este código
 existir.
 
+#### Quando quebrar, o conserto é subir a versão
+
+Já aconteceu uma vez, e o sintoma é este: **todo** link do YouTube falha, nos dois formatos
+(`youtube.com/watch?v=` e `youtu.be/`), com a mesma mensagem. Falhar nos dois formatos é o
+que separa "o extrator caducou" de "esta URL tem algo de errado".
+
+A causa embaixo aparece como `ContentNotAvailableException: The page needs to be reloaded`.
+Ela vem do NewPipeExtractor, não deste código, e o conserto é bumpar `newpipe` em
+[`gradle/libs.versions.toml`](gradle/libs.versions.toml) para a
+[última release](https://github.com/TeamNewPipe/NewPipeExtractor/releases) e recompilar.
+
+Para confirmar sem instalar nada no celular, o resolvedor é código de JVM pura: um teste
+temporário em `app/src/test/` que chame `MediaResolvers().resolve(url)` e imprima o
+resultado responde em segundos. Ele precisa de `testOptions { unitTests.isReturnDefaultValues
+= true }` no `build.gradle.kts`, porque `android.util.Log` não existe na JVM — e não deve
+ficar no repositório depois: a suíte cobre só núcleo puro, e um teste que depende de rede e
+de um vídeo específico apodrece.
+
 ### Quando o arquivo some
 
 A pasta é pública, e isso foi uma troca consciente: em troca de sobreviver à desinstalação e
@@ -1009,7 +1027,9 @@ NewPipeExtractor. `minSdk 29`, `targetSdk 36`, Java 17.
 
 O NewPipeExtractor vem do **JitPack**, que é a única razão de o repositório estar declarado
 em `settings.gradle.kts` — ele não publica no Maven Central. A versão é fixa de propósito:
-é a peça que quebra sozinha.
+é a peça que quebra sozinha, e uma faixa de versão faria o build mudar de comportamento sem
+ninguém pedir. Em compensação, ela **precisa** ser subida à mão de tempos em tempos — ver
+[Quando quebrar, o conserto é subir a versão](#quando-quebrar-o-conserto-é-subir-a-versão).
 
 **Setup:** instale o [Android Studio](https://developer.android.com/studio) — ele traz o
 JDK embutido (JBR 21) e baixa o SDK sozinho. `File → Open` na raiz do projeto, aguarde o

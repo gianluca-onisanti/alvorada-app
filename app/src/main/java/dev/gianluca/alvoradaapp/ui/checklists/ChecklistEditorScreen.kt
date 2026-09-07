@@ -216,7 +216,15 @@ fun ChecklistEditorScreen(checklistId: Long, onDone: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                TimePicker(state = timeState)
+                // O `TimePicker` tem largura própria e o alinhamento padrão de um item
+                // de `LazyColumn` é `Start` — sem esta Row ele fica encostado na
+                // margem esquerda, torto em relação a todo o resto da tela.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    TimePicker(state = timeState)
+                }
             }
 
             item {

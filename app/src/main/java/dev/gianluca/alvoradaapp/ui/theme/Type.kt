@@ -42,19 +42,26 @@ val AlvoradaTypography = Base.copy(
 
     titleLarge = Base.titleLarge.copy(fontFamily = Display, fontWeight = FontWeight.SemiBold),
 
-    // Tracking aberto nos rótulos: é o detalhe que faz um texto curto em maiúsculas
-    // ler como interface de instrumento em vez de texto apertado. `SectionTitle` já
-    // passa tudo para maiúsculas, então é aqui que aquele efeito acontece.
+    // `labelLarge` é o estilo do texto de **todo** botão e chip do Material, e por isso
+    // fica no tracking padrão. A primeira versão abria 0.8sp aqui e o efeito foi
+    // bonito e errado: 0.7sp por caractere infla um rótulo em ~10%, o suficiente para
+    // "Adicionar item" quebrar em duas linhas dentro do botão. Rótulo de botão é
+    // largura disputada, não moldura.
     labelLarge = Base.labelLarge.copy(
         fontFamily = Display,
         fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.8.sp,
     ),
+    // Tracking moderado: `labelMedium` carrega as linhas curtas de metadado da lista
+    // ("Checklist cumprido · volta em…"), que também disputam largura. O tracking
+    // largo de verdade mora em `SectionTitle`, que é onde ele foi feito para estar —
+    // texto curto, em maiúsculas, com a linha inteira só para si.
     labelMedium = Base.labelMedium.copy(
         fontFamily = Display,
         fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.0.sp,
+        letterSpacing = 0.5.sp,
     ),
+    // `labelSmall` só rotula números soltos ("moedas", "nível"), onde não há o que
+    // quebrar — mantém o tracking cheio.
     labelSmall = Base.labelSmall.copy(
         fontFamily = Display,
         fontWeight = FontWeight.Medium,

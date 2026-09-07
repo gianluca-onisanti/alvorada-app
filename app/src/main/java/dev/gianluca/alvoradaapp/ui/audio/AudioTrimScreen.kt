@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -342,20 +343,48 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
     }
 }
 
+/**
+ * Os quatro passos de ajuste fino de uma alça.
+ *
+ * Os botões dividem a largura por peso, com o padding interno apertado. Com o padding
+ * padrão do Material — 24dp de cada lado — quatro botões e o rótulo passavam de 350dp
+ * e quebravam em duas linhas num aparelho comum; o rótulo tem largura fixa pelo mesmo
+ * motivo, para não roubar espaço de quem precisa dele.
+ */
 @Composable
 private fun NudgeRow(label: String, onNudge: (Long) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        OutlinedButton(onClick = { onNudge(-1000) }) { Text("−1s") }
-        OutlinedButton(onClick = { onNudge(-100) }) { Text("−100ms") }
-        OutlinedButton(onClick = { onNudge(100) }) { Text("+100ms") }
-        OutlinedButton(onClick = { onNudge(1000) }) { Text("+1s") }
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.width(52.dp),
+        )
+        NUDGES.forEach { (delta, text) ->
+            OutlinedButton(
+                onClick = { onNudge(delta) },
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
+
+private val NUDGES = listOf(
+    -1000L to "−1s",
+    -100L to "−100ms",
+    100L to "+100ms",
+    1000L to "+1s",
+)
 
 /**
  * A onda, com o trecho selecionado em destaque e o resto apagado.
