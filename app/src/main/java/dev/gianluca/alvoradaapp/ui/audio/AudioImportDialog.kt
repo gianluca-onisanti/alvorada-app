@@ -24,10 +24,13 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import dev.gianluca.alvoradaapp.AlvoradaApp
 import dev.gianluca.alvoradaapp.audio.AudioDownloadWorker
+import dev.gianluca.alvoradaapp.audio.AudioLibraryStore
 import dev.gianluca.alvoradaapp.audio.RemoteAudio
 import dev.gianluca.alvoradaapp.audio.ResolveException
 import dev.gianluca.alvoradaapp.audio.formatClipPosition
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import androidx.compose.runtime.rememberCoroutineScope
 
@@ -48,21 +51,31 @@ fun AudioImportDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
     var url by remember { mutableStateOf("") }
     var resolving by remember { mutableStateOf(false) }
     var resolved by remember { mutableStateOf<RemoteAudio?>(null) }
+    var fileName by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var downloading by remember { mutableStateOf(false) }
+    var workId by remember { mutableStateOf<UUID?>(null) }
 
-    val workInfos by WorkManager.getInstance(context)
-        .getWorkInfosForUniqueWorkFlow(AudioDownloadWorker.WORK_NAME)
-        .collectAsState(initial = emptyList())
-    val work = workInfos.firstOrNull()
+    // Acompanha **este** pedido, pelo id, e não o nome único do trabalho.
+    //
+    // O WorkManager guarda a execução anterior sob o mesmo nome único, então observar
+    // o nome fazia a tela ler o resultado da tentativa passada como se fosse o desta:
+    // no instante em que `downloading` virava true, o `WorkInfo` visível ainda era o
+    // `FAILED` de antes, e o primeiro toque em "Baixar" mostrava o erro da vez
+    // anterior sem que nada tivesse sido tentado. O segundo toque "funcionava" só
+    // porque aí o estado já era o novo.
+    val workFlow = remember(workId) {
+        workId?.let { WorkManager.getInstance(context).getWorkInfoByIdFlow(it) }
+            ?: flowOf(null)
+    }
+    val work by workFlow.collectAsState(initial = null)
     val progress = work?.progress?.getInt(AudioDownloadWorker.KEY_PROGRESS, 0) ?: 0
 
-    LaunchedEffect(work?.state, downloading) {
-        if (!downloading) return@LaunchedEffect
+    LaunchedEffect(work?.state) {
         when (work?.state) {
             WorkInfo.State.SUCCEEDED -> onDone()
             WorkInfo.State.FAILED -> {
-                error = work.outputData.getString(AudioDownloadWorker.KEY_ERROR)
+                error = work?.outputData?.getString(AudioDownloadWorker.KEY_ERROR)
                     ?: "O download falhou."
                 downloading = false
             }
@@ -94,7 +107,19 @@ fun AudioImportDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
 
                 resolved?.let { audio ->
                     Spacer(Modifier.height(12.dp))
-                    Text(audio.title, style = MaterialTheme.typography.titleSmall)
+                    // Editável, e já preenchido: o título de um vídeo vira um nome de
+                    // arquivo comprido e cheio de ruído, e corrigir isso depois, com
+                    // trinta arquivos na pasta, é trabalho que não precisava existir.
+                    OutlinedTextField(
+                        value = fileName,
+                        onValueChange = { fileName = it },
+                        label = { Text("Salvar como") },
+                        suffix = { Text(".${audio.extension}") },
+                        enabled = !downloading,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(6.dp))
                     Text(
                         buildString {
                             if (audio.durationMs > 0) {
@@ -141,7 +166,10 @@ fun AudioImportDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
                         error = null
                         scope.launch {
                             runCatching { resolvers.resolve(url) }
-                                .onSuccess { resolved = it }
+                                .onSuccess {
+                                    resolved = it
+                                    fileName = AudioLibraryStore.sanitizeName(it.title)
+                                }
                                 .onFailure {
                                     error = (it as? ResolveException)?.message
                                         ?: "Não consegui ler esse endereço."
@@ -152,14 +180,15 @@ fun AudioImportDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
                 ) { Text("Buscar") }
             } else {
                 TextButton(
-                    enabled = !downloading,
+                    enabled = !downloading && fileName.isNotBlank(),
                     onClick = {
                         downloading = true
                         error = null
-                        AudioDownloadWorker.enqueue(
+                        val chosen = fileName.trim().ifBlank { audio.title }
+                        workId = AudioDownloadWorker.enqueue(
                             context = context,
                             audio = audio,
-                            fileName = "${audio.title}.${audio.extension}",
+                            fileName = "$chosen.${audio.extension}",
                         )
                     },
                 ) { Text("Baixar") }

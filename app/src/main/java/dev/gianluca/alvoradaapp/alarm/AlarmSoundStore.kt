@@ -65,7 +65,9 @@ class AlarmSoundStore(
         val displayName = queryDisplayName(source) ?: "som"
         val mime = context.contentResolver.getType(source) ?: "audio/mpeg"
 
-        val target = library.createPending(displayName, mime) ?: return@withContext null
+        val target = runCatching { library.createPending(displayName, mime) }
+            .onFailure { Log.e(TAG, "Falha ao criar entrada para $displayName", it) }
+            .getOrNull() ?: return@withContext null
 
         val ok = runCatching {
             context.contentResolver.openInputStream(source)?.use { input ->
@@ -100,7 +102,9 @@ class AlarmSoundStore(
             var moved = 0
 
             for (file in legacy) {
-                val target = library.createPending(file.name, "audio/mpeg") ?: continue
+                val target = runCatching { library.createPending(file.name, "audio/mpeg") }
+                    .onFailure { Log.e(TAG, "Falha ao migrar ${file.name}", it) }
+                    .getOrNull() ?: continue
                 val ok = runCatching {
                     library.openOutput(target)?.use { output ->
                         file.inputStream().use { it.copyTo(output) }

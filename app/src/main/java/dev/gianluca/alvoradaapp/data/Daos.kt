@@ -588,6 +588,15 @@ interface AudioClipDao {
     suspend fun deleteByUri(uri: String)
 
     /**
+     * Mantém o nome do catálogo igual ao do arquivo.
+     *
+     * Sem isto, renomear um original deixaria a linhagem dos cortes dele apontando
+     * para um nome que não existe mais em lugar nenhum da lista.
+     */
+    @Query("UPDATE audio_clips SET displayName = :displayName WHERE mediaStoreUri = :uri")
+    suspend fun renameByUri(uri: String, displayName: String)
+
+    /**
      * Descarta o registro de arquivos que não estão mais na pasta.
      *
      * O MediaStore é a fonte de verdade sobre o que existe, e ele pode mudar sem

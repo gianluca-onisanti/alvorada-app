@@ -13,6 +13,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import java.util.UUID
 import dev.gianluca.alvoradaapp.AlvoradaApp
 import dev.gianluca.alvoradaapp.R
 import dev.gianluca.alvoradaapp.alarm.Notifications
@@ -50,8 +51,13 @@ class AudioDownloadWorker(
 
         setForeground(foregroundInfo(name, 0))
 
-        val target = store.createPending(name, mime)
-            ?: return@withContext Result.failure(error("Não consegui criar o arquivo."))
+        val target = runCatching { store.createPending(name, mime) }
+            .getOrElse { failure ->
+                Log.e(TAG, "Não consegui criar a entrada de $name", failure)
+                return@withContext Result.failure(
+                    error(failure.message ?: "Não consegui criar o arquivo.")
+                )
+            }
 
         val result = runCatching { download(streamUrl, target, store, name) }
 
@@ -161,10 +167,20 @@ class AudioDownloadWorker(
         private const val TAG = "AudioDownloadWorker"
         private const val NOTIFICATION_ID = 4801
 
-        /** Nome único para acompanhar o progresso de fora sem guardar o id. */
+        /**
+         * Nome único: dois downloads ao mesmo tempo disputariam a mesma notificação
+         * de foreground, então o novo substitui o anterior.
+         *
+         * Quem acompanha o progresso **não** deve observar por este nome. O histórico
+         * do WorkManager guarda a execução anterior sob ele, e observar o nome faz a
+         * tela ler o resultado da tentativa passada como se fosse o desta — foi o que
+         * fazia o primeiro toque em "Baixar" mostrar o erro da vez anterior. Observe
+         * pelo id que [enqueue] devolve.
+         */
         const val WORK_NAME = "audio-download"
 
-        fun enqueue(context: Context, audio: RemoteAudio, fileName: String) {
+        /** Devolve o id do pedido, que é a única forma de acompanhar **este** download. */
+        fun enqueue(context: Context, audio: RemoteAudio, fileName: String): UUID {
             val request = OneTimeWorkRequestBuilder<AudioDownloadWorker>()
                 .setInputData(
                     workDataOf(
@@ -182,6 +198,7 @@ class AudioDownloadWorker(
                 androidx.work.ExistingWorkPolicy.REPLACE,
                 request,
             )
+            return request.id
         }
     }
 }

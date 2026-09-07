@@ -51,8 +51,9 @@ class AudioTrimmer(
         try {
             runTransformer(source, startMs, endMs, staging)
 
+            // Sem `?:`: `createPending` agora lança com o motivo do MediaStore, e essa
+            // mensagem é melhor do que qualquer uma que se pudesse escrever aqui.
             val target = store.createPending(displayName, "audio/mp4")
-                ?: throw IllegalStateException("Não consegui criar o arquivo do corte.")
 
             val output = store.openOutput(target)
                 ?: throw IllegalStateException("Não consegui abrir o corte para escrita.")

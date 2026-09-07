@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,14 +23,18 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -78,6 +83,9 @@ fun AudioLibraryScreen(onTrim: (String) -> Unit, onOpenDrawer: () -> Unit) {
     var reloadKey by remember { mutableStateOf(0) }
     var importing by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<LibraryFile?>(null) }
+    var renaming by remember { mutableStateOf<LibraryFile?>(null) }
+    var renameError by remember { mutableStateOf<String?>(null) }
+    var menuFor by remember { mutableStateOf<Uri?>(null) }
     var playing by remember { mutableStateOf<Uri?>(null) }
 
     val mediaPermission = remember {
@@ -229,8 +237,30 @@ fun AudioLibraryScreen(onTrim: (String) -> Unit, onOpenDrawer: () -> Unit) {
                             IconButton(onClick = { onTrim(file.uri.toString()) }) {
                                 Icon(Icons.Filled.ContentCut, contentDescription = "Recortar")
                             }
-                            IconButton(onClick = { deleting = file }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Excluir")
+                            // Recortar fica no ícone porque é a ação de todo dia;
+                            // renomear e excluir entram no menu. Um quarto botão nesta
+                            // linha comeria a largura do nome, que é o que se precisa
+                            // ler para achar o arquivo.
+                            Box {
+                                IconButton(onClick = { menuFor = file.uri }) {
+                                    Icon(
+                                        Icons.Filled.MoreVert,
+                                        contentDescription = "Mais ações",
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = menuFor == file.uri,
+                                    onDismissRequest = { menuFor = null },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Renomear") },
+                                        onClick = { menuFor = null; renaming = file },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Excluir") },
+                                        onClick = { menuFor = null; deleting = file },
+                                    )
+                                }
                             }
                         }
                     }
@@ -243,6 +273,28 @@ fun AudioLibraryScreen(onTrim: (String) -> Unit, onOpenDrawer: () -> Unit) {
         AudioImportDialog(
             onDismiss = { importing = false },
             onDone = { importing = false; reloadKey++ },
+        )
+    }
+
+    renaming?.let { file ->
+        RenameDialog(
+            file = file,
+            error = renameError,
+            onDismiss = { renaming = null; renameError = null },
+            onConfirm = { newName ->
+                scope.launch {
+                    runCatching { store.rename(file.uri, newName) }
+                        .onSuccess { saved ->
+                            // O catálogo acompanha, senão a linhagem de um corte
+                            // passaria a citar um nome de original que não existe.
+                            container.audioClipRepository.rename(file.uri.toString(), saved)
+                            renaming = null
+                            renameError = null
+                            reloadKey++
+                        }
+                        .onFailure { renameError = it.message ?: "Não consegui renomear." }
+                }
+            },
         )
     }
 
@@ -269,6 +321,58 @@ fun AudioLibraryScreen(onTrim: (String) -> Unit, onOpenDrawer: () -> Unit) {
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancelar") } },
         )
     }
+}
+
+/**
+ * Trocar o nome de um arquivo.
+ *
+ * Só o nome: a extensão fica de fora do campo e é recolocada pelo store, porque o
+ * MediaStore recusa um arquivo cuja extensão não combine com o tipo gravado — e
+ * digitar ".mp3" num m4a é um erro fácil demais de cometer.
+ */
+@Composable
+private fun RenameDialog(
+    file: LibraryFile,
+    error: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    val extension = file.displayName.substringAfterLast('.', "")
+    var name by remember(file.uri) {
+        mutableStateOf(file.displayName.substringBeforeLast('.'))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Renomear áudio") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nome") },
+                    suffix = { if (extension.isNotBlank()) Text(".$extension") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = { onConfirm(name) },
+            ) { Text("Salvar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
 }
 
 /**

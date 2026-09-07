@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -93,6 +95,9 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
     var baseName by remember { mutableStateOf("audio") }
     /** O nome com extensão, que é como o MediaStore conhece o arquivo. */
     var sourceName by remember { mutableStateOf("audio") }
+    var clipName by remember(sourceUri) { mutableStateOf("") }
+    /** Enquanto falso, o nome acompanha as alças; o primeiro toque no campo o congela. */
+    var nameEdited by remember(sourceUri) { mutableStateOf(false) }
 
     val player = remember {
         ExoPlayer.Builder(context).build().apply { repeatMode = Player.REPEAT_MODE_ONE }
@@ -124,6 +129,14 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
 
         peaks = container.waveformExtractor.peaks(activeUri)
         loadingPeaks = false
+    }
+
+    // Os dois-pontos de "0:12" viram "_" no nome do arquivo, então o sugerido usa
+    // outra marca. É o nome que vai aparecer na lista pelos próximos meses.
+    val suggestedName = "$baseName (corte ${formatClipPosition(startMs).replace(':', 'm')}" +
+        "-${formatClipPosition(endMs).replace(':', 'm')})"
+    LaunchedEffect(suggestedName, nameEdited) {
+        if (!nameEdited) clipName = suggestedName
     }
 
     fun applyClip() {
@@ -293,16 +306,27 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
             }
 
             Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = clipName,
+                onValueChange = { clipName = it; nameEdited = true },
+                label = { Text("Salvar como") },
+                suffix = { Text(".m4a") },
+                enabled = !saving,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(12.dp))
             Button(
-                enabled = !saving && endMs - startMs >= MIN_CLIP_MS,
+                enabled = !saving && clipName.isNotBlank() &&
+                    endMs - startMs >= MIN_CLIP_MS,
                 onClick = {
                     saving = true
                     error = null
                     player.stop()
                     playing = false
                     scope.launch {
-                        val label = "$baseName (corte ${formatClipPosition(startMs)}" +
-                            "-${formatClipPosition(endMs)}).m4a"
+                        val label = "${clipName.trim().ifBlank { suggestedName }}.m4a"
                         val from = activeUri
                         val fromName = sourceName
                         val fromDuration = durationMs
@@ -342,20 +366,48 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
     }
 }
 
+/**
+ * Os quatro passos de ajuste fino de uma alça.
+ *
+ * Os botões dividem a largura por peso, com o padding interno apertado. Com o padding
+ * padrão do Material — 24dp de cada lado — quatro botões e o rótulo passavam de 350dp
+ * e quebravam em duas linhas num aparelho comum; o rótulo tem largura fixa pelo mesmo
+ * motivo, para não roubar espaço de quem precisa dele.
+ */
 @Composable
 private fun NudgeRow(label: String, onNudge: (Long) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        OutlinedButton(onClick = { onNudge(-1000) }) { Text("−1s") }
-        OutlinedButton(onClick = { onNudge(-100) }) { Text("−100ms") }
-        OutlinedButton(onClick = { onNudge(100) }) { Text("+100ms") }
-        OutlinedButton(onClick = { onNudge(1000) }) { Text("+1s") }
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.width(52.dp),
+        )
+        NUDGES.forEach { (delta, text) ->
+            OutlinedButton(
+                onClick = { onNudge(delta) },
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
+
+private val NUDGES = listOf(
+    -1000L to "−1s",
+    -100L to "−100ms",
+    100L to "+100ms",
+    1000L to "+1s",
+)
 
 /**
  * A onda, com o trecho selecionado em destaque e o resto apagado.

@@ -172,7 +172,7 @@ private fun DiagnosticsContent(refreshKey: Int, modifier: Modifier = Modifier) {
                                 seedMessage = null
                             }
                         }) {
-                            Text("Criar p/ daqui a 5 min")
+                            Text("Criar em 5 min")
                         }
                         OutlinedButton(onClick = {
                             scope.launch {

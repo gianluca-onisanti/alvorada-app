@@ -21,6 +21,16 @@ data class LibraryFile(
 )
 
 /**
+ * A pasta recusou o arquivo, e por quê.
+ *
+ * Existe porque a versão anterior devolvia `null` e o chamador dizia "não consegui
+ * criar o arquivo" — verdadeiro, inútil, e indistinguível entre um formato recusado,
+ * um nome inválido e um cartão cheio. O motivo real só aparecia no logcat, que
+ * ninguém tem à mão às 6h.
+ */
+class LibraryWriteException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
  * Dono de `Music/Alvorada/`.
  *
  * A V1 copiava todo som escolhido para `filesDir`, porque uma URI do SAF depende de
@@ -50,18 +60,40 @@ class AudioLibraryStore(private val context: Context) {
      * sem isso um player de música acharia um arquivo truncado no meio do caminho.
      * Quem escreve precisa chamar [publish] no fim.
      */
-    suspend fun createPending(displayName: String, mimeType: String): Uri? =
+    suspend fun createPending(displayName: String, mimeType: String): Uri =
         withContext(Dispatchers.IO) {
-            runCatching {
-                val values = ContentValues().apply {
-                    put(MediaStore.Audio.Media.DISPLAY_NAME, displayName.sanitized())
-                    put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
-                    put(MediaStore.Audio.Media.RELATIVE_PATH, RELATIVE_PATH)
-                    put(MediaStore.Audio.Media.IS_PENDING, 1)
+            val values = ContentValues().apply {
+                put(MediaStore.Audio.Media.DISPLAY_NAME, displayName.sanitized())
+                put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Audio.Media.RELATIVE_PATH, RELATIVE_PATH)
+                put(MediaStore.Audio.Media.IS_PENDING, 1)
+            }
+            val inserted = runCatching { context.contentResolver.insert(collection, values) }
+                .getOrElse { failure ->
+                    Log.e(TAG, "Não consegui criar $displayName", failure)
+                    throw LibraryWriteException(explain(failure, mimeType), failure)
                 }
-                context.contentResolver.insert(collection, values)
-            }.onFailure { Log.e(TAG, "Não consegui criar $displayName", it) }.getOrNull()
+            inserted ?: throw LibraryWriteException(
+                "A pasta ${folderLabel()} recusou o arquivo, sem dizer o motivo."
+            )
         }
+
+    /**
+     * Traduz a recusa do MediaStore.
+     *
+     * O caso que já apareceu na prática tem nome: `Unsupported MIME type audio/webm`.
+     * Sem esta tradução, ele chega ao usuário como uma linha de exceção em inglês no
+     * meio de uma tela em português.
+     */
+    private fun explain(failure: Throwable, mimeType: String): String {
+        val raw = failure.message.orEmpty()
+        return when {
+            raw.contains("Unsupported MIME type", ignoreCase = true) ->
+                "A pasta de músicas do Android não aceita arquivos $mimeType."
+            raw.isNotBlank() -> "O sistema recusou o arquivo: $raw"
+            else -> "O sistema recusou a criação do arquivo."
+        }
+    }
 
     fun openOutput(uri: Uri): OutputStream? =
         runCatching { context.contentResolver.openOutputStream(uri) }.getOrNull()
@@ -134,18 +166,49 @@ class AudioLibraryStore(private val context: Context) {
             .getOrDefault(false)
     }
 
-    suspend fun rename(uri: Uri, displayName: String): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
+    /**
+     * Troca o nome do arquivo, preservando a extensão.
+     *
+     * A extensão não é negociável: o MediaStore valida que ela combina com o
+     * `MIME_TYPE` gravado, e um `.m4a` renomeado para `.mp3` é recusado com o mesmo
+     * "Unsupported MIME type" do [createPending]. Quem chama passa só o nome que o
+     * usuário digitou; a extensão atual é lida do próprio arquivo e recolocada.
+     */
+    suspend fun rename(uri: Uri, baseName: String): String = withContext(Dispatchers.IO) {
+        val current = displayNameOf(uri)
+            ?: throw LibraryWriteException("Não achei esse arquivo na pasta.")
+        val extension = current.substringAfterLast('.', "")
+        val clean = baseName.trim().substringBeforeLast('.').ifBlank {
+            throw LibraryWriteException("O nome não pode ficar vazio.")
+        }
+        val target = if (extension.isBlank()) clean else "$clean.$extension"
+
+        val changed = runCatching {
             context.contentResolver.update(
                 uri,
                 ContentValues().apply {
-                    put(MediaStore.Audio.Media.DISPLAY_NAME, displayName.sanitized())
+                    put(MediaStore.Audio.Media.DISPLAY_NAME, target.sanitized())
                 },
                 null,
                 null,
-            ) > 0
-        }.getOrDefault(false)
+            )
+        }.getOrElse { failure ->
+            Log.e(TAG, "Não consegui renomear $current", failure)
+            throw LibraryWriteException(explain(failure, "o nome novo"), failure)
+        }
+        if (changed <= 0) throw LibraryWriteException("O sistema não aceitou o nome novo.")
+        target.sanitized()
     }
+
+    private fun displayNameOf(uri: Uri): String? = runCatching {
+        context.contentResolver.query(
+            uri,
+            arrayOf(MediaStore.Audio.Media.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { if (it.moveToFirst()) it.getString(0) else null }
+    }.getOrNull()
 
     /** O caminho legível, para dizer ao usuário onde os arquivos estão. */
     fun folderLabel(): String = "${Environment.DIRECTORY_MUSIC}/$FOLDER"

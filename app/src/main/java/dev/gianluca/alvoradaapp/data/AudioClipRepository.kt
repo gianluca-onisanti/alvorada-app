@@ -123,6 +123,12 @@ class AudioClipRepository(db: AlvoradaDatabase) {
             }
     }
 
+    /** Acompanha um arquivo renomeado, para a linhagem não citar um nome extinto. */
+    suspend fun rename(uri: String, displayName: String) {
+        runCatching { dao.renameByUri(uri, displayName) }
+            .onFailure { Log.w(TAG, "Não consegui renomear $uri no catálogo", it) }
+    }
+
     /** Esquece um arquivo apagado pela própria tela. */
     suspend fun forget(uri: String) {
         runCatching { dao.deleteByUri(uri) }

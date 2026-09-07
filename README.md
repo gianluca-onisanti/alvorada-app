@@ -480,15 +480,61 @@ duas implementações. Quando a do YouTube parar de funcionar, o que quebra é u
 falha aparece com uma mensagem que diz o que fazer, e colar a **URL direta do arquivo**
 continua trazendo o áudio para dentro sem depender de atualização nenhuma.
 
-O resolvedor do YouTube escolhe o stream **só de áudio** de maior bitrate. Isso evita baixar
-o vídeo inteiro para jogar a imagem fora, e o formato que vem — m4a/AAC ou webm/Opus — o
-`MediaPlayer` toca direto desde a API 21: não há transcodificação no caminho, o arquivo entra
-na pasta com a qualidade que saiu.
+O resolvedor do YouTube escolhe o stream **só de áudio**, o que evita baixar o vídeo inteiro
+para jogar a imagem fora. Não há transcodificação no caminho: o arquivo entra na pasta com a
+qualidade que saiu.
+
+A escolha é por **formato primeiro, bitrate depois**, e a ordem não é estética. O MediaStore
+recusa `audio/webm` na coleção de áudio — `IllegalArgumentException: Unsupported MIME type
+audio/webm` —, e a faixa de maior bitrate do YouTube é quase sempre Opus dentro de WebM.
+Escolher só por bitrate, que era o critério da primeira versão, levava direto para o único
+formato que a pasta não aceita: o download baixava e morria na hora de gravar.
+
+Os tipos aceitos foram verificados inserindo cada um direto no provider do aparelho:
+`audio/mp4`, `audio/mpeg` e `audio/ogg` entram, `audio/webm` não. `audio/mp4` (m4a/AAC) vem
+primeiro porque é também o que o `MediaPlayer` toca desde a API 21. A diferença entre Opus a
+160 kbps e AAC a 128 num despertador às 6h é teórica; a diferença entre um arquivo que grava
+e um que não grava, não.
 
 **Ressalva registrada.** Baixar do YouTube contraria os Termos de Serviço dele — é por isso
 que apps do tipo NewPipe não estão na Play Store. Para este caso (app pessoal, sideload por
 APK, sem loja) isso não impede nada, mas fecha a porta da Play Store enquanto este código
 existir.
+
+#### Quando quebrar, o conserto é subir a versão
+
+Já aconteceu uma vez, e o sintoma é este: **todo** link do YouTube falha, nos dois formatos
+(`youtube.com/watch?v=` e `youtu.be/`), com a mesma mensagem. Falhar nos dois formatos é o
+que separa "o extrator caducou" de "esta URL tem algo de errado".
+
+A causa embaixo aparece como `ContentNotAvailableException: The page needs to be reloaded`.
+Ela vem do NewPipeExtractor, não deste código, e o conserto é bumpar `newpipe` em
+[`gradle/libs.versions.toml`](gradle/libs.versions.toml) para a
+[última release](https://github.com/TeamNewPipe/NewPipeExtractor/releases) e recompilar.
+
+Para confirmar sem instalar nada no celular, o resolvedor é código de JVM pura: um teste
+temporário em `app/src/test/` que chame `MediaResolvers().resolve(url)` e imprima o
+resultado responde em segundos. Ele precisa de `testOptions { unitTests.isReturnDefaultValues
+= true }` no `build.gradle.kts`, porque `android.util.Log` não existe na JVM — e não deve
+ficar no repositório depois: a suíte cobre só núcleo puro, e um teste que depende de rede e
+de um vídeo específico apodrece.
+
+### O nome é escolhido, não herdado
+
+O título de um vídeo vira um nome de arquivo comprido e cheio de ruído, e o nome sugerido de
+um corte carrega os pontos de corte. Com uma dúzia de arquivos, a pasta fica ilegível.
+
+Por isso o nome é editável **nos três momentos**: ao baixar (o campo já vem preenchido com o
+título), ao salvar um corte (preenchido com a sugestão, que acompanha as alças até o primeiro
+toque no campo), e depois, pelo menu de cada linha da biblioteca.
+
+A **extensão fica de fora do campo** nos três. O MediaStore valida que ela combina com o
+`MIME_TYPE` gravado, e um `.m4a` renomeado para `.mp3` é recusado com o mesmo "Unsupported
+MIME type" que já derrubou o download uma vez. Quem digita escolhe o nome; o app recoloca a
+extensão.
+
+Renomear também atualiza `audio_clips`, senão a linhagem de um corte passaria a citar um
+nome de original que não existe mais em lugar nenhum da lista.
 
 ### Quando o arquivo some
 
@@ -516,6 +562,25 @@ Escreve direto numa entrada **pendente** do MediaStore, invisível para o resto 
 até terminar: nenhum player de música encontra um arquivo pela metade. Se o download falha,
 a entrada pendente é apagada — um arquivo pendente e vazio ficaria invisível para sempre,
 ocupando espaço que ninguém consegue achar para apagar.
+
+**Quem acompanha o download observa o id do pedido, não o nome do trabalho.** O trabalho é
+único — dois downloads simultâneos disputariam a mesma notificação de foreground —, mas o
+WorkManager guarda a execução anterior sob esse mesmo nome. Observar o nome fazia a tela ler
+o resultado da tentativa passada como se fosse o desta: no instante do toque em "Baixar", o
+`WorkInfo` visível ainda era o `FAILED` de antes, e o erro da vez anterior aparecia sem que
+nada tivesse sido tentado. O segundo toque "funcionava" só porque aí o estado já era o novo.
+
+**A pegadinha do Android 14.** O `AndroidManifest.xml` redeclara o
+`androidx.work.impl.foreground.SystemForegroundService` só para dizer
+`android:foregroundServiceType="dataSync"`. A biblioteca o declara sem tipo, e a partir da
+API 34 o tipo pedido em runtime precisa estar contido no que o manifesto declara — sem essa
+linha, tocar em "Baixar" derruba o processo inteiro com *"foregroundServiceType 0x00000001
+is not a subset of foregroundServiceType attribute 0x00000000"*.
+
+E não é uma falha que o WorkManager saiba tratar: o estouro acontece dentro do serviço, na
+thread principal, longe de qualquer `try` deste código — daí o app fechar em vez de mostrar
+erro. Vale como aviso geral: **todo** worker que chame `setForeground` com tipo precisa da
+declaração correspondente aqui.
 
 ## Pontos, níveis e sequência
 
@@ -1009,7 +1074,9 @@ NewPipeExtractor. `minSdk 29`, `targetSdk 36`, Java 17.
 
 O NewPipeExtractor vem do **JitPack**, que é a única razão de o repositório estar declarado
 em `settings.gradle.kts` — ele não publica no Maven Central. A versão é fixa de propósito:
-é a peça que quebra sozinha.
+é a peça que quebra sozinha, e uma faixa de versão faria o build mudar de comportamento sem
+ninguém pedir. Em compensação, ela **precisa** ser subida à mão de tempos em tempos — ver
+[Quando quebrar, o conserto é subir a versão](#quando-quebrar-o-conserto-é-subir-a-versão).
 
 **Setup:** instale o [Android Studio](https://developer.android.com/studio) — ele traz o
 JDK embutido (JBR 21) e baixa o SDK sozinho. `File → Open` na raiz do projeto, aguarde o
