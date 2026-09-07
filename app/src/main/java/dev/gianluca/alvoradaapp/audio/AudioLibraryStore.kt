@@ -166,18 +166,49 @@ class AudioLibraryStore(private val context: Context) {
             .getOrDefault(false)
     }
 
-    suspend fun rename(uri: Uri, displayName: String): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
+    /**
+     * Troca o nome do arquivo, preservando a extensão.
+     *
+     * A extensão não é negociável: o MediaStore valida que ela combina com o
+     * `MIME_TYPE` gravado, e um `.m4a` renomeado para `.mp3` é recusado com o mesmo
+     * "Unsupported MIME type" do [createPending]. Quem chama passa só o nome que o
+     * usuário digitou; a extensão atual é lida do próprio arquivo e recolocada.
+     */
+    suspend fun rename(uri: Uri, baseName: String): String = withContext(Dispatchers.IO) {
+        val current = displayNameOf(uri)
+            ?: throw LibraryWriteException("Não achei esse arquivo na pasta.")
+        val extension = current.substringAfterLast('.', "")
+        val clean = baseName.trim().substringBeforeLast('.').ifBlank {
+            throw LibraryWriteException("O nome não pode ficar vazio.")
+        }
+        val target = if (extension.isBlank()) clean else "$clean.$extension"
+
+        val changed = runCatching {
             context.contentResolver.update(
                 uri,
                 ContentValues().apply {
-                    put(MediaStore.Audio.Media.DISPLAY_NAME, displayName.sanitized())
+                    put(MediaStore.Audio.Media.DISPLAY_NAME, target.sanitized())
                 },
                 null,
                 null,
-            ) > 0
-        }.getOrDefault(false)
+            )
+        }.getOrElse { failure ->
+            Log.e(TAG, "Não consegui renomear $current", failure)
+            throw LibraryWriteException(explain(failure, "o nome novo"), failure)
+        }
+        if (changed <= 0) throw LibraryWriteException("O sistema não aceitou o nome novo.")
+        target.sanitized()
     }
+
+    private fun displayNameOf(uri: Uri): String? = runCatching {
+        context.contentResolver.query(
+            uri,
+            arrayOf(MediaStore.Audio.Media.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { if (it.moveToFirst()) it.getString(0) else null }
+    }.getOrNull()
 
     /** O caminho legível, para dizer ao usuário onde os arquivos estão. */
     fun folderLabel(): String = "${Environment.DIRECTORY_MUSIC}/$FOLDER"

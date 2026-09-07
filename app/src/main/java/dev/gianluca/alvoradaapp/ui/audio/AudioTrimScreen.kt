@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -94,6 +95,9 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
     var baseName by remember { mutableStateOf("audio") }
     /** O nome com extensão, que é como o MediaStore conhece o arquivo. */
     var sourceName by remember { mutableStateOf("audio") }
+    var clipName by remember(sourceUri) { mutableStateOf("") }
+    /** Enquanto falso, o nome acompanha as alças; o primeiro toque no campo o congela. */
+    var nameEdited by remember(sourceUri) { mutableStateOf(false) }
 
     val player = remember {
         ExoPlayer.Builder(context).build().apply { repeatMode = Player.REPEAT_MODE_ONE }
@@ -125,6 +129,14 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
 
         peaks = container.waveformExtractor.peaks(activeUri)
         loadingPeaks = false
+    }
+
+    // Os dois-pontos de "0:12" viram "_" no nome do arquivo, então o sugerido usa
+    // outra marca. É o nome que vai aparecer na lista pelos próximos meses.
+    val suggestedName = "$baseName (corte ${formatClipPosition(startMs).replace(':', 'm')}" +
+        "-${formatClipPosition(endMs).replace(':', 'm')})"
+    LaunchedEffect(suggestedName, nameEdited) {
+        if (!nameEdited) clipName = suggestedName
     }
 
     fun applyClip() {
@@ -294,16 +306,27 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
             }
 
             Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = clipName,
+                onValueChange = { clipName = it; nameEdited = true },
+                label = { Text("Salvar como") },
+                suffix = { Text(".m4a") },
+                enabled = !saving,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(12.dp))
             Button(
-                enabled = !saving && endMs - startMs >= MIN_CLIP_MS,
+                enabled = !saving && clipName.isNotBlank() &&
+                    endMs - startMs >= MIN_CLIP_MS,
                 onClick = {
                     saving = true
                     error = null
                     player.stop()
                     playing = false
                     scope.launch {
-                        val label = "$baseName (corte ${formatClipPosition(startMs)}" +
-                            "-${formatClipPosition(endMs)}).m4a"
+                        val label = "${clipName.trim().ifBlank { suggestedName }}.m4a"
                         val from = activeUri
                         val fromName = sourceName
                         val fromDuration = durationMs

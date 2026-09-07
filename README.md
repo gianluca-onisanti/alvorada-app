@@ -519,6 +519,23 @@ resultado responde em segundos. Ele precisa de `testOptions { unitTests.isReturn
 ficar no repositório depois: a suíte cobre só núcleo puro, e um teste que depende de rede e
 de um vídeo específico apodrece.
 
+### O nome é escolhido, não herdado
+
+O título de um vídeo vira um nome de arquivo comprido e cheio de ruído, e o nome sugerido de
+um corte carrega os pontos de corte. Com uma dúzia de arquivos, a pasta fica ilegível.
+
+Por isso o nome é editável **nos três momentos**: ao baixar (o campo já vem preenchido com o
+título), ao salvar um corte (preenchido com a sugestão, que acompanha as alças até o primeiro
+toque no campo), e depois, pelo menu de cada linha da biblioteca.
+
+A **extensão fica de fora do campo** nos três. O MediaStore valida que ela combina com o
+`MIME_TYPE` gravado, e um `.m4a` renomeado para `.mp3` é recusado com o mesmo "Unsupported
+MIME type" que já derrubou o download uma vez. Quem digita escolhe o nome; o app recoloca a
+extensão.
+
+Renomear também atualiza `audio_clips`, senão a linhagem de um corte passaria a citar um
+nome de original que não existe mais em lugar nenhum da lista.
+
 ### Quando o arquivo some
 
 A pasta é pública, e isso foi uma troca consciente: em troca de sobreviver à desinstalação e
@@ -545,6 +562,13 @@ Escreve direto numa entrada **pendente** do MediaStore, invisível para o resto 
 até terminar: nenhum player de música encontra um arquivo pela metade. Se o download falha,
 a entrada pendente é apagada — um arquivo pendente e vazio ficaria invisível para sempre,
 ocupando espaço que ninguém consegue achar para apagar.
+
+**Quem acompanha o download observa o id do pedido, não o nome do trabalho.** O trabalho é
+único — dois downloads simultâneos disputariam a mesma notificação de foreground —, mas o
+WorkManager guarda a execução anterior sob esse mesmo nome. Observar o nome fazia a tela ler
+o resultado da tentativa passada como se fosse o desta: no instante do toque em "Baixar", o
+`WorkInfo` visível ainda era o `FAILED` de antes, e o erro da vez anterior aparecia sem que
+nada tivesse sido tentado. O segundo toque "funcionava" só porque aí o estado já era o novo.
 
 **A pegadinha do Android 14.** O `AndroidManifest.xml` redeclara o
 `androidx.work.impl.foreground.SystemForegroundService` só para dizer
