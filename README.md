@@ -12,7 +12,7 @@ App pessoal, sem loja e sem servidor: tudo mora no aparelho, distribuído por AP
 
 - [Por que ele existe](#por-que-ele-existe)
 - [Um dia usando o app](#um-dia-usando-o-app)
-- [As cinco abas](#as-cinco-abas)
+- [Onde fica cada coisa](#onde-fica-cada-coisa)
 - [Instalação e primeiro uso](#instalação-e-primeiro-uso)
 - [Configurando o seu dia](#configurando-o-seu-dia)
 - [Dois tipos de despertador](#dois-tipos-de-despertador)
@@ -81,19 +81,33 @@ Em palavras, o mesmo caminho:
 7. **Por volta das 03h a varredura fecha o dia anterior**, avalia a sequência e reafirma
    todos os agendamentos.
 
-## As cinco abas
+## Onde fica cada coisa
 
-| Aba            | O que faz                                                                                             |
+Seis telas, todas no **menu lateral** — o botão de três linhas no canto de qualquer tela,
+ou um arrasto da borda esquerda:
+
+| Tela           | O que faz                                                                                             |
 | -------------- | ----------------------------------------------------------------------------------------------------- |
 | **Painel**     | A home. Fração de missões do dia, nível, moedas, sequência, faixa dos últimos 7 dias e o que falta.   |
 | **Relógio**    | Seus despertadores, agrupados por categoria. É onde se cria e edita alarme e missão.                  |
 | **Evidências** | A dívida fotográfica: o que falta com o prazo correndo, e o que já foi entregue hoje com miniaturas.  |
 | **Galeria**    | Todas as fotos, agrupadas por dia, categoria ou despertador.                                          |
 | **Prêmios**    | A loja. Recompensas que você cadastra com um preço em moedas, e o histórico de resgates.              |
+| **Ajustes**    | Permissões, tema, backup e o teste de fogo do despertador.                                            |
 
-**Ajustes** não é aba: é a chave no cabeçalho do Painel. É tela de configuração e
-diagnóstico, aberta em dias raros — uma aba permanente sugeriria que faz parte da rotina,
-ocupando o lugar de algo que faz.
+As **três primeiras** também ficam na barra de baixo, porque são o ciclo diário e às 6h da
+manhã o que se usa todo dia tem que estar a um toque, não a dois: o despertador cria a
+dívida, Evidências a liquida, o Painel mostra o placar. Galeria, Prêmios e Ajustes se abrem
+em dias raros e vivem só no menu.
+
+Até a V1 eram cinco abas numa barra, e Ajustes era uma chave escondida no cabeçalho do
+Painel. Cinco era o teto do que cabe numa barra sem virar sopa de ícone, e a V2 acrescenta
+telas — então a lista completa foi para o menu lateral, e Ajustes virou um item nomeado
+como os outros em vez de um botão que só encontra quem já sabe que ele existe.
+
+O menu **não abre** por arrasto durante uma edição de despertador nem sobre o visor da
+câmera: nas duas o gesto de borda pertence à tela, e abrir o menu ali significaria perder o
+que estava sendo preenchido.
 
 ## Instalação e primeiro uso
 
@@ -369,7 +383,39 @@ faria qualquer um desinstalar o app.
 missão duas vezes pontua uma vez só. Se o saldo pudesse divergir do histórico, a confiança
 no mecanismo inteiro iria junto.
 
-**Missão não cumprida é cinza, nunca vermelha.** É informação, não repreensão.
+**Missão não cumprida é cinza, nunca vermelha.** É informação, não repreensão. Os papéis
+`error*` do Material ficam no padrão justamente porque nenhuma tela os usa.
+
+**A geometria mora num lugar só.** As cinco medidas de `Shapes` — 2 a 8dp, quadradas — estão
+em [Shape.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/theme/Shape.kt), e re-vestem
+`Card`, `TopAppBar`, `Chip`, `Button`, `AlertDialog`, `TextField` e o menu de uma vez. Nenhuma
+tela declara raio próprio: o `RoundedCornerShape(10.dp)` que sobrava em duas miniaturas virou
+`MaterialTheme.shapes.medium`, e os três "pontos de cor" que cada tela desenhava à mão viraram
+chamadas do `ColorDot` que já existia. Não é purismo — é que uma medida hardcoded numa tela é
+uma tela que não acompanha a próxima mudança de tema.
+
+**As duas paletas são escritas por inteiro.** Na V1 o tema claro definia quatro papéis e
+deixava `background`, `surface` e todos os containers caírem no lavanda de fábrica do Material
+— e as telas se apoiam em `primaryContainer` e `surfaceVariant` em oito lugares. O resultado
+era um tema claro que não era a cara do app. O âmbar `#FFB020` também não sobrevive como cor
+de texto no claro, então ali ele desce para um tom legível e a versão viva fica no container.
+
+**Translucidez sem blur.** Vidro de verdade exigiria desfocar o que está **atrás** do cartão,
+e `RenderEffect.createBlurEffect` só existe da API 31 — o `minSdk` é 29. A leitura de vidro
+vem de três coisas que funcionam em qualquer versão e custam zero de desempenho: opacidade
+sobre o gradiente do fundo, um fio de contorno na cor primária, e um realce no topo que
+sugere espessura. O gradiente não é enfeite: sobre fundo de cor chapada, superfície
+translúcida não se lê — só parece apagada.
+
+**O tema tem duas portas de entrada, e as duas precisam de tudo.** `AlvoradaTheme` e
+`AlvoradaAlarmTheme` recebem `colorScheme`, `shapes` e `typography` cada uma. Esquecer a
+segunda faria a tela do alarme manter a geometria e a fonte antigas em silêncio, sem erro de
+compilação para avisar — e a tela do alarme é a única que **precisa** funcionar.
+
+**A escolha de tema é do app, não do sistema.** "Seguir o sistema" continua o padrão, mas dá
+para fixar claro ou escuro nos Ajustes: o tema do celular e o deste app não precisam
+concordar, já que ele é aberto de madrugada mais do que em qualquer outro horário. A tela do
+alarme não obedece a isso e nunca vai.
 
 **Injeção de dependência manual.** Hilt resolveria o mesmo problema com anotações e geração
 de código; num app deste porte isso troca clareza por magia. O grafo inteiro se lê de uma
@@ -418,6 +464,9 @@ A Activity é só a cara do que o serviço está fazendo — por isso fechá-la 
 | Export e restauração                                | [BackupManager.kt](app/src/main/java/dev/gianluca/alvoradaapp/backup/BackupManager.kt)                                      |
 | Ajustes e diagnóstico                               | [DiagnosticsScreen.kt](app/src/main/java/dev/gianluca/alvoradaapp/diagnostics/DiagnosticsScreen.kt) · [SystemChecks.kt](app/src/main/java/dev/gianluca/alvoradaapp/diagnostics/SystemChecks.kt) |
 | Boas-vindas e aviso de pendências                   | [WelcomeDialog.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/onboarding/WelcomeDialog.kt) · [SetupCard.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/onboarding/SetupCard.kt) |
+| Tema: cores, formas, tipografia                     | [Color.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/theme/Color.kt) · [Shape.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/theme/Shape.kt) · [Type.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/theme/Type.kt) · [Theme.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/theme/Theme.kt) |
+| Menu lateral e barra superior                       | [NavDrawer.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/components/NavDrawer.kt) · [TopBar.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/components/TopBar.kt) |
+| Fundo e superfície de vidro                         | [Bits.kt](app/src/main/java/dev/gianluca/alvoradaapp/ui/components/Bits.kt) |
 
 **Convenções do schema:** instantes absolutos são epoch millis (`Long`); datas civis são
 `String` ISO `yyyy-MM-dd`, que ordena lexicograficamente e serve direto como chave de
@@ -446,6 +495,17 @@ enquadramento própria:
 O ícone das notificações **não** usa o logo: o Android o desenha como silhueta chapada de
 24dp, usando só o canal alfa, e o relógio, a seta, a montanha e as fotos viram uma mancha.
 Ali segue o `ic_alarm`.
+
+**Tipografia.** [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) (OFL, licença
+em [`licenses/`](licenses/ChakraPetch-OFL.txt)), em três pesos, ~240 KB. Angular e de
+numerais largos, combina com os cantos retos e é o que carrega o registro futurista sem
+depender de cor. Ela fica **na moldura** — relógio, números do painel, cabeçalhos, rótulos
+de botão e de seção. O **corpo de texto segue na fonte do sistema**, que é a mais legível às
+6h da manhã e a que o usuário já ajustou no aparelho; título de missão e de despertador
+também, porque são conteúdo dele, não moldura.
+
+Empacotada em vez de baixada em tempo de execução (`ui-text-google-fonts`): um despertador
+precisa desenhar a hora com o aparelho em modo avião, sem rede e sem Play Services.
 
 ## Como testar
 
@@ -565,6 +625,24 @@ corrompido não pode destruir o que já existe.
 | -- | ----------------------------------------------------------------------- | --------------------------- |
 | 45 | Escolher um MP3 seu, **apagar o arquivo original** e disparar o alarme  | Continua tocando normalmente |
 
+**Navegação e tema** — o que a V2 acrescentou, e onde ela pode ter quebrado algo.
+
+| #  | Teste                                                                    | Esperado                                                    |
+| -- | ------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| 46 | Abrir o menu pelas seis telas de primeiro nível                          | Abre de todas; o item da tela atual aparece marcado         |
+| 47 ★ | Dentro do editor de despertador, arrastar da borda esquerda            | O menu **não** abre — o gesto pertence à tela               |
+| 48 ★ | Idem na tela da câmera de evidência                                     | Idem                                                        |
+| 49 | Rolar a Galeria, ir ao Painel pela barra, voltar à Galeria pelo menu     | A posição da rolagem é preservada                           |
+| 50 | Alternar claro/escuro do sistema com Ajustes em "Seguir o sistema"       | Todas as telas acompanham, sem lavanda de fábrica no claro  |
+| 51 | Fixar "Claro" nos Ajustes e pôr o sistema no escuro                      | O app fica claro; a escolha sobrevive a fechar e reabrir     |
+| 52 ★ | Com o app fixado em "Claro", disparar um alarme                        | A tela do alarme continua **escura**, com a fonte e os cantos novos |
+| 53 | Conferir os ícones da barra de status nos dois temas                     | Legíveis nos dois — claros no escuro, escuros no claro       |
+| 54 | Abrir Ajustes pelo menu, pelas boas-vindas e pelo aviso de pendências    | Os três caminhos chegam lá                                  |
+| 55 | Abrir o app com ele morto, observando o primeiro frame                   | Sem flash branco antes do tema assumir                      |
+
+O teste 52 é o que mais importa dos novos: o tema tem duas portas de entrada, e é a segunda
+que serve a única tela que **precisa** funcionar.
+
 Logs úteis durante os testes:
 
 ```bash
@@ -635,3 +713,22 @@ erros aparecem meses depois; o resto se verifica mais barato no aparelho.
   ZIP de backup é a ponte.
 - **Fabricantes agressivos** continuam sendo o maior risco à confiabilidade, e não há nada
   que o app possa fazer além de avisar.
+
+### O que vem na V2
+
+O redesign e o menu lateral já estão aqui. Faltam duas frentes, nesta ordem:
+
+- **Checklists.** Boa parte dos despertadores é, na prática, um checklist diário, semanal ou
+  mensal — e hoje o app só sabe modelar isso como missão pendurada num despertador, o que
+  força um despertador por item e não tem noção de ciclo nem de vencimento. A ideia é um
+  checklist com frequência própria (reusando os quatro modos de repetição que já existem),
+  categorias, ordem, e a regra de que marcar o item cala o despertador dele até a próxima
+  rodada. Checklists dão XP e moedas, mas **ficam fora da regra dos 70%**: um checklist mensal
+  de doze itens vencendo num dia distorceria a conta do dia inteiro.
+- **Biblioteca de áudio.** Colar uma URL, baixar o áudio em boa qualidade, cortar o trecho
+  exato com waveform e pré-escuta em loop, e guardar tudo numa pasta visível em
+  `Music/Alvorada/`. Hoje pôr um som novo no despertador exige baixar no computador, converter
+  e passar por cabo. Ressalva registrada: baixar do YouTube contraria os Termos de Serviço
+  dele, o que é aceitável num app pessoal distribuído por APK, mas fecha a porta da Play Store
+  — e qualquer extrator quebra sozinho quando o YouTube muda o player, então ele fica isolado
+  atrás de uma interface, com a URL direta como saída que continua funcionando.

@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PlayArrow
@@ -57,6 +57,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -79,7 +80,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.ZonedDateTime
 
-private val SNOOZE_OPTIONS = listOf(1, 3, 5, 10, 15, 20)
+private val SNOOZE_OPTIONS = listOf(1, 5, 10, 15, 20)
 
 private const val DEFAULT_HOUR = 7
 
@@ -243,6 +244,15 @@ fun AlarmEditorScreen(
     }
 
     Scaffold(
+        // Mesmo motivo das telas de primeiro nível: o editor também mora dentro
+        // de `AlvoradaBackground`, e um Scaffold opaco o deixaria como a única
+        // tela de conteúdo com fundo chapado.
+        containerColor = Color.Transparent,
+        // Obrigatório junto do container transparente: o Scaffold deriva o
+        // contentColor do containerColor, e `contentColorFor(Transparent)` não
+        // resolve nenhum papel do tema — o texto herdaria preto sobre o fundo
+        // escuro e simplesmente desapareceria.
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             TopAppBar(
                 title = {
@@ -256,7 +266,7 @@ fun AlarmEditorScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onDone) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
                 },
                 actions = {

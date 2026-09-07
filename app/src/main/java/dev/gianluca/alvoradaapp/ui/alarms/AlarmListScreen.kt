@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoDelete
@@ -29,7 +28,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,7 +37,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -66,7 +64,9 @@ import dev.gianluca.alvoradaapp.data.FolderWithAlarms
 import dev.gianluca.alvoradaapp.data.describeRepeat
 import dev.gianluca.alvoradaapp.data.isOneShot
 import dev.gianluca.alvoradaapp.data.outlook
+import dev.gianluca.alvoradaapp.ui.components.AlvoradaTopBar
 import dev.gianluca.alvoradaapp.ui.components.CategoryStripe
+import dev.gianluca.alvoradaapp.ui.components.ColorDot
 import dev.gianluca.alvoradaapp.ui.components.formatClock
 import dev.gianluca.alvoradaapp.ui.components.formatFireClock
 import dev.gianluca.alvoradaapp.ui.components.formatTimeUntil
@@ -75,11 +75,11 @@ import dev.gianluca.alvoradaapp.ui.folders.FolderDialog
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlarmListScreen(
     onEditAlarm: (Long) -> Unit,
     onCreateAlarm: (oneShot: Boolean) -> Unit,
+    onOpenDrawer: () -> Unit,
 ) {
     val context = LocalContext.current
     val container = remember { (context.applicationContext as AlvoradaApp).container }
@@ -94,15 +94,21 @@ fun AlarmListScreen(
     var disabling by remember { mutableStateOf<AlarmEntity?>(null) }
 
     Scaffold(
+        // Transparente para o gradiente de `AlvoradaBackground` chegar até aqui:
+        // o padrão do Scaffold é `background` opaco, que cobriria o fundo inteiro
+        // e deixaria as superfícies de vidro sem nada para deixar passar.
+        containerColor = Color.Transparent,
+        // Obrigatório junto do container transparente: o Scaffold deriva o
+        // contentColor do containerColor, e `contentColorFor(Transparent)` não
+        // resolve nenhum papel do tema — o texto herdaria preto sobre o fundo
+        // escuro e simplesmente desapareceria.
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
-            TopAppBar(
-                title = { Text("Relógio") },
-                actions = {
-                    IconButton(onClick = { creatingFolder = true }) {
-                        Icon(Icons.Filled.CreateNewFolder, contentDescription = "Nova pasta")
-                    }
-                },
-            )
+            AlvoradaTopBar("Relógio", onOpenDrawer) {
+                IconButton(onClick = { creatingFolder = true }) {
+                    Icon(Icons.Filled.CreateNewFolder, contentDescription = "Nova pasta")
+                }
+            }
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { choosingKind = true }) {
@@ -267,12 +273,7 @@ private fun FolderHeader(
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.size(6.dp))
-        Box(
-            Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(parseColor(group.folder.colorHex))
-        )
+        ColorDot(group.folder.colorHex)
         Spacer(Modifier.size(10.dp))
         Column(Modifier.weight(1f)) {
             Text(

@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -20,7 +19,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,7 +30,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -44,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -55,6 +53,7 @@ import dev.gianluca.alvoradaapp.core.StreakSnapshot
 import dev.gianluca.alvoradaapp.data.ProgressSummary
 import dev.gianluca.alvoradaapp.data.RedeemResult
 import dev.gianluca.alvoradaapp.data.RewardEntity
+import dev.gianluca.alvoradaapp.ui.components.AlvoradaTopBar
 import kotlinx.coroutines.launch
 
 /**
@@ -64,9 +63,8 @@ import kotlinx.coroutines.launch
  * Moedas são a única coisa gastável do sistema. O XP e o nível ficam intocados por
  * compras: gastar não desfaz o que você fez para ganhar.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RewardsScreen() {
+fun RewardsScreen(onOpenDrawer: () -> Unit) {
     val context = LocalContext.current
     val container = remember { (context.applicationContext as AlvoradaApp).container }
     val points = container.pointsRepository
@@ -82,7 +80,16 @@ fun RewardsScreen() {
     var creating by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Recompensas") }) },
+        // Transparente para o gradiente de `AlvoradaBackground` chegar até aqui:
+        // o padrão do Scaffold é `background` opaco, que cobriria o fundo inteiro
+        // e deixaria as superfícies de vidro sem nada para deixar passar.
+        containerColor = Color.Transparent,
+        // Obrigatório junto do container transparente: o Scaffold deriva o
+        // contentColor do containerColor, e `contentColorFor(Transparent)` não
+        // resolve nenhum papel do tema — o texto herdaria preto sobre o fundo
+        // escuro e simplesmente desapareceria.
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        topBar = { AlvoradaTopBar("Recompensas", onOpenDrawer) },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             FloatingActionButton(onClick = { creating = true }) {
@@ -192,7 +199,7 @@ private fun BalanceCard(progress: ProgressSummary) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
+                    .clip(MaterialTheme.shapes.small),
             )
             Spacer(Modifier.height(10.dp))
             Text(

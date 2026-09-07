@@ -1,6 +1,7 @@
 package dev.gianluca.alvoradaapp.ui.components
 
 import androidx.compose.ui.graphics.Color
+import dev.gianluca.alvoradaapp.ui.theme.Purple
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -49,4 +50,4 @@ fun formatClock(hour: Int, minute: Int): String = "%02d:%02d".format(hour, minut
 /** Cor da pasta. Volta ao roxo padrão se o hex gravado estiver corrompido. */
 fun parseColor(hex: String): Color =
     runCatching { Color(android.graphics.Color.parseColor(hex)) }
-        .getOrDefault(Color(0xFF7C5CFF))
+        .getOrDefault(Purple)

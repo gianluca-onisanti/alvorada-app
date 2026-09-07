@@ -8,14 +8,22 @@ import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Redeem
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -26,11 +34,15 @@ import dev.gianluca.alvoradaapp.diagnostics.DiagnosticsScreen
 import dev.gianluca.alvoradaapp.ui.alarms.AlarmEditorScreen
 import dev.gianluca.alvoradaapp.ui.alarms.AlarmListScreen
 import dev.gianluca.alvoradaapp.ui.alarms.NEW_ALARM_ID
+import dev.gianluca.alvoradaapp.ui.components.AlvoradaDrawer
+import dev.gianluca.alvoradaapp.ui.components.NavDestination
 import dev.gianluca.alvoradaapp.ui.evidence.EvidenceCameraScreen
 import dev.gianluca.alvoradaapp.ui.evidence.EvidenceScreen
 import dev.gianluca.alvoradaapp.ui.gallery.GalleryScreen
 import dev.gianluca.alvoradaapp.ui.panel.PanelScreen
 import dev.gianluca.alvoradaapp.ui.rewards.RewardsScreen
+import dev.gianluca.alvoradaapp.ui.theme.GLASS_ALPHA
+import kotlinx.coroutines.launch
 
 object Routes {
     const val PANEL = "panel"
@@ -38,7 +50,7 @@ object Routes {
     const val EVIDENCE_BOARD = "evidences"
     const val GALLERY = "gallery"
     const val REWARDS = "rewards"
-    const val DIAGNOSTICS = "diagnostics"
+    const val SETTINGS = "settings"
     const val ALARM_EDITOR = "alarm/{id}?once={once}"
     const val EVIDENCE = "evidence/{instanceId}"
 
@@ -50,126 +62,181 @@ object Routes {
     fun evidence(instanceId: Long) = "evidence/$instanceId"
 }
 
-private data class Tab(val route: String, val label: String, val icon: @Composable () -> Unit)
+/**
+ * Os destinos de primeiro nível, na ordem do menu lateral.
+ *
+ * A V1 tinha cinco abas numa barra e escondia Ajustes numa chave no cabeçalho do
+ * Painel. Cinco era o teto do que cabe numa barra sem virar sopa de ícone, e a V2
+ * acrescenta destinos — então o menu lateral passou a ser a lista completa, e
+ * Ajustes virou um item nomeado como os outros, em vez de um botão que só encontra
+ * quem já sabe que ele existe.
+ */
+private val DESTINATIONS = listOf(
+    NavDestination(Routes.PANEL, "Painel", Icons.Filled.Dashboard),
+    NavDestination(Routes.ALARMS, "Relógio", Icons.Filled.Alarm),
+    NavDestination(Routes.EVIDENCE_BOARD, "Evidências", Icons.Filled.PhotoCamera),
+    NavDestination(Routes.GALLERY, "Galeria", Icons.Filled.PhotoLibrary),
+    NavDestination(Routes.REWARDS, "Prêmios", Icons.Filled.Redeem),
+    NavDestination(Routes.SETTINGS, "Ajustes", Icons.Filled.Settings),
+)
 
 /**
- * Cinco abas, todas de uso diário.
+ * Quantos dos primeiros [DESTINATIONS] também ficam na barra de baixo.
  *
- * Ajustes saiu daqui e virou um botão no cabeçalho do Painel: é uma tela de
- * configuração e diagnóstico, aberta em dias raros, e uma aba permanente sugeria que
- * fosse parte da rotina. Evidências entra ao lado do Relógio porque é a continuação
- * direta dele — o despertador cria a dívida, esta tela a liquida.
+ * A barra sobreviveu ao menu por causa das 6h da manhã: o que se usa todo dia tem
+ * que estar a um toque, e não a dois. Painel, Relógio e Evidências são o ciclo
+ * diário — o despertador cria a dívida, a tela de evidências a liquida, o painel
+ * mostra o placar. Galeria, Prêmios e Ajustes se abrem em dias raros e ficam só no
+ * menu.
  */
-private val TABS = listOf(
-    Tab(Routes.PANEL, "Painel") { Icon(Icons.Filled.Dashboard, contentDescription = null) },
-    Tab(Routes.ALARMS, "Relógio") { Icon(Icons.Filled.Alarm, contentDescription = null) },
-    Tab(Routes.EVIDENCE_BOARD, "Evidências") {
-        Icon(Icons.Filled.PhotoCamera, contentDescription = null)
-    },
-    Tab(Routes.GALLERY, "Galeria") { Icon(Icons.Filled.PhotoLibrary, contentDescription = null) },
-    Tab(Routes.REWARDS, "Prêmios") { Icon(Icons.Filled.Redeem, contentDescription = null) },
-)
+private const val BOTTOM_BAR_COUNT = 3
+
+/** Rotas com chrome: barra superior com menu e barra de baixo. */
+private val CHROME_ROUTES: Set<String> = DESTINATIONS.map { it.route }.toSet()
 
 @Composable
 fun AlvoradaNavigation(diagnosticsRefreshKey: Int) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val hasChrome = currentRoute in CHROME_ROUTES
 
-    Scaffold(
-        bottomBar = {
-            // O editor ocupa a tela inteira: navegar de aba no meio de uma edição
-            // não salva seria uma forma silenciosa de perder trabalho.
-            if (currentRoute in TABS.map { it.route }) {
-                NavigationBar {
-                    TABS.forEach { tab ->
-                        NavigationBarItem(
-                            selected = currentRoute == tab.route,
-                            onClick = {
-                                if (currentRoute != tab.route) {
-                                    navController.navigate(tab.route) {
-                                        popUpTo(Routes.PANEL) { inclusive = false }
-                                        launchSingleTop = true
-                                    }
-                                }
-                            },
-                            icon = tab.icon,
-                            label = { Text(tab.label) },
-                        )
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    val openDrawer: () -> Unit = { scope.launch { drawerState.open() } }
+
+    val goTo: (String) -> Unit = { route ->
+        scope.launch { drawerState.close() }
+        if (currentRoute != route) navController.navigateTopLevel(route)
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        // O mesmo portão da barra de baixo. Sem ele, um arrasto de borda abriria o
+        // menu no meio de uma edição de despertador ou por cima do visor da câmera.
+        gesturesEnabled = hasChrome,
+        drawerContent = {
+            AlvoradaDrawer(
+                destinations = DESTINATIONS,
+                currentRoute = currentRoute,
+                separatorAfter = BOTTOM_BAR_COUNT - 1,
+                onNavigate = goTo,
+            )
+        },
+    ) {
+        Scaffold(
+            // Transparente para o gradiente de `AlvoradaBackground` aparecer: é ele
+            // que dá às superfícies translúcidas algo para deixar passar.
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+            bottomBar = {
+                // O editor ocupa a tela inteira: navegar de aba no meio de uma edição
+                // não salva seria uma forma silenciosa de perder trabalho.
+                if (hasChrome) {
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                            .copy(alpha = GLASS_ALPHA),
+                    ) {
+                        DESTINATIONS.take(BOTTOM_BAR_COUNT).forEach { destination ->
+                            NavigationBarItem(
+                                selected = currentRoute == destination.route,
+                                onClick = { goTo(destination.route) },
+                                icon = { Icon(destination.icon, contentDescription = null) },
+                                label = { Text(destination.label) },
+                            )
+                        }
                     }
                 }
-            }
-        },
-    ) { padding ->
-        NavHost(
-            navController = navController,
-            startDestination = Routes.PANEL,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            composable(Routes.PANEL) {
-                PanelScreen(
-                    onOpenCamera = { id -> navController.navigate(Routes.evidence(id)) },
-                    onOpenSettings = { navController.navigate(Routes.DIAGNOSTICS) },
-                    setupRefreshKey = diagnosticsRefreshKey,
-                )
-            }
+            },
+        ) { padding ->
+            NavHost(
+                navController = navController,
+                startDestination = Routes.PANEL,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            ) {
+                composable(Routes.PANEL) {
+                    PanelScreen(
+                        onOpenCamera = { id -> navController.navigate(Routes.evidence(id)) },
+                        onOpenSettings = { navController.navigateTopLevel(Routes.SETTINGS) },
+                        onOpenDrawer = openDrawer,
+                        setupRefreshKey = diagnosticsRefreshKey,
+                    )
+                }
 
-            composable(Routes.EVIDENCE_BOARD) {
-                EvidenceScreen(
-                    onOpenCamera = { id -> navController.navigate(Routes.evidence(id)) },
-                )
-            }
+                composable(Routes.EVIDENCE_BOARD) {
+                    EvidenceScreen(
+                        onOpenCamera = { id -> navController.navigate(Routes.evidence(id)) },
+                        onOpenDrawer = openDrawer,
+                    )
+                }
 
-            composable(Routes.GALLERY) { GalleryScreen() }
+                composable(Routes.GALLERY) { GalleryScreen(onOpenDrawer = openDrawer) }
 
-            composable(Routes.REWARDS) { RewardsScreen() }
+                composable(Routes.REWARDS) { RewardsScreen(onOpenDrawer = openDrawer) }
 
-            composable(Routes.ALARMS) {
-                AlarmListScreen(
-                    onEditAlarm = { id -> navController.navigate(Routes.alarmEditor(id)) },
-                    onCreateAlarm = { once ->
-                        navController.navigate(Routes.alarmEditor(NEW_ALARM_ID, once))
-                    },
-                )
-            }
+                composable(Routes.ALARMS) {
+                    AlarmListScreen(
+                        onEditAlarm = { id -> navController.navigate(Routes.alarmEditor(id)) },
+                        onCreateAlarm = { once ->
+                            navController.navigate(Routes.alarmEditor(NEW_ALARM_ID, once))
+                        },
+                        onOpenDrawer = openDrawer,
+                    )
+                }
 
-            composable(
-                route = Routes.ALARM_EDITOR,
-                arguments = listOf(
-                    // Tipo texto de propósito: o id de um despertador novo é -1, e o
-                    // NavType.LongType não aceita negativo num segmento de caminho.
-                    navArgument("id") { type = NavType.StringType },
-                    navArgument("once") { type = NavType.BoolType; defaultValue = false },
-                ),
-            ) { entry ->
-                val id = entry.arguments?.getString("id")?.toLongOrNull() ?: NEW_ALARM_ID
-                AlarmEditorScreen(
-                    alarmId = id,
-                    startAsOneShot = entry.arguments?.getBoolean("once") == true,
-                    onDone = { navController.popBackStack() },
-                )
-            }
+                composable(
+                    route = Routes.ALARM_EDITOR,
+                    arguments = listOf(
+                        // Tipo texto de propósito: o id de um despertador novo é -1, e o
+                        // NavType.LongType não aceita negativo num segmento de caminho.
+                        navArgument("id") { type = NavType.StringType },
+                        navArgument("once") { type = NavType.BoolType; defaultValue = false },
+                    ),
+                ) { entry ->
+                    val id = entry.arguments?.getString("id")?.toLongOrNull() ?: NEW_ALARM_ID
+                    AlarmEditorScreen(
+                        alarmId = id,
+                        startAsOneShot = entry.arguments?.getBoolean("once") == true,
+                        onDone = { navController.popBackStack() },
+                    )
+                }
 
-            composable(
-                route = Routes.EVIDENCE,
-                arguments = listOf(navArgument("instanceId") { type = NavType.LongType }),
-            ) { entry ->
-                val id = entry.arguments?.getLong("instanceId") ?: return@composable
-                EvidenceCameraScreen(
-                    instanceId = id,
-                    onFinished = { navController.popBackStack() },
-                    onCancel = { navController.popBackStack() },
-                )
-            }
+                composable(
+                    route = Routes.EVIDENCE,
+                    arguments = listOf(navArgument("instanceId") { type = NavType.LongType }),
+                ) { entry ->
+                    val id = entry.arguments?.getLong("instanceId") ?: return@composable
+                    EvidenceCameraScreen(
+                        instanceId = id,
+                        onFinished = { navController.popBackStack() },
+                        onCancel = { navController.popBackStack() },
+                    )
+                }
 
-            composable(Routes.DIAGNOSTICS) {
-                DiagnosticsScreen(
-                    refreshKey = diagnosticsRefreshKey,
-                    onBack = { navController.popBackStack() },
-                )
+                composable(Routes.SETTINGS) {
+                    DiagnosticsScreen(
+                        refreshKey = diagnosticsRefreshKey,
+                        onOpenDrawer = openDrawer,
+                    )
+                }
             }
         }
+    }
+}
+
+/**
+ * Navega para um destino de primeiro nível preservando o que a tela tinha na tela.
+ *
+ * `saveState`/`restoreState` são novos na V2 e existem porque o menu deixou a troca
+ * de destino mais frequente: sem eles cada volta ao Painel remontava a tela do zero
+ * e perdia a posição da rolagem, que numa galeria de meses de foto é perda real.
+ */
+private fun NavHostController.navigateTopLevel(route: String) {
+    navigate(route) {
+        popUpTo(Routes.PANEL) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }

@@ -15,19 +15,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -38,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +45,7 @@ import dev.gianluca.alvoradaapp.AlvoradaApp
 import dev.gianluca.alvoradaapp.data.EvidenceBoard
 import dev.gianluca.alvoradaapp.data.EvidenceTask
 import dev.gianluca.alvoradaapp.data.PanelRepository
+import dev.gianluca.alvoradaapp.ui.components.AlvoradaTopBar
 import dev.gianluca.alvoradaapp.ui.components.CategoryStripe
 import dev.gianluca.alvoradaapp.ui.components.ColorDot
 import dev.gianluca.alvoradaapp.ui.components.EmptyState
@@ -70,9 +69,8 @@ import java.time.format.DateTimeFormatter
  * débito transforma o app numa lista de cobranças. O que foi feito precisa ocupar
  * espaço na mesma tela em que o que falta aparece.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EvidenceScreen(onOpenCamera: (Long) -> Unit) {
+fun EvidenceScreen(onOpenCamera: (Long) -> Unit, onOpenDrawer: () -> Unit) {
     val context = LocalContext.current
     val container = remember { (context.applicationContext as AlvoradaApp).container }
     val today = remember { PanelRepository.today() }
@@ -91,7 +89,16 @@ fun EvidenceScreen(onOpenCamera: (Long) -> Unit) {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Evidências") }) },
+        // Transparente para o gradiente de `AlvoradaBackground` chegar até aqui:
+        // o padrão do Scaffold é `background` opaco, que cobriria o fundo inteiro
+        // e deixaria as superfícies de vidro sem nada para deixar passar.
+        containerColor = Color.Transparent,
+        // Obrigatório junto do container transparente: o Scaffold deriva o
+        // contentColor do containerColor, e `contentColorFor(Transparent)` não
+        // resolve nenhum papel do tema — o texto herdaria preto sobre o fundo
+        // escuro e simplesmente desapareceria.
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        topBar = { AlvoradaTopBar("Evidências", onOpenDrawer) },
     ) { padding ->
         if (board.isEmpty) {
             EmptyState(
@@ -269,7 +276,7 @@ private fun DoneCard(task: EvidenceTask) {
                         Box(
                             Modifier
                                 .size(58.dp)
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(MaterialTheme.shapes.medium)
                         ) {
                             AsyncImage(
                                 model = File(photo.filePath),

@@ -2,6 +2,7 @@ package dev.gianluca.alvoradaapp.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -28,7 +29,32 @@ class AppPreferences(context: Context) {
         store.edit { it[WELCOME_SEEN] = true }
     }
 
+    /**
+     * Tema escolhido. [ThemeChoice.SYSTEM] enquanto ninguém escolher — que é o
+     * comportamento que a V1 tinha, e o certo para quem já configurou o aparelho.
+     *
+     * Leitura tolerante: um valor desconhecido cai no sistema em vez de derrubar o
+     * app, na mesma linha do conversor de `RepeatKind`.
+     */
+    val themeChoice: Flow<ThemeChoice> = store.data.map { prefs ->
+        prefs[THEME_CHOICE]
+            ?.let { name -> runCatching { ThemeChoice.valueOf(name) }.getOrNull() }
+            ?: ThemeChoice.SYSTEM
+    }
+
+    suspend fun setThemeChoice(choice: ThemeChoice) {
+        store.edit { it[THEME_CHOICE] = choice.name }
+    }
+
     private companion object {
         val WELCOME_SEEN = booleanPreferencesKey("welcome_seen")
+        val THEME_CHOICE = stringPreferencesKey("theme_choice")
     }
+}
+
+/** As três respostas possíveis para "claro ou escuro?". */
+enum class ThemeChoice(val label: String) {
+    SYSTEM("Seguir o sistema"),
+    LIGHT("Claro"),
+    DARK("Escuro"),
 }
