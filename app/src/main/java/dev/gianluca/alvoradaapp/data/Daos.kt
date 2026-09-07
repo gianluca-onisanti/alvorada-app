@@ -556,3 +556,46 @@ interface ChecklistDao {
     @Update
     suspend fun updateState(state: ChecklistItemStateEntity)
 }
+
+/**
+ * Origem e linhagem dos arquivos da biblioteca.
+ *
+ * Sem `Flow`: a biblioteca é montada a partir do MediaStore, que não observa, então um
+ * fluxo aqui prometeria uma reatividade que a outra metade da tela não tem.
+ */
+@Dao
+interface AudioClipDao {
+
+    @Query("SELECT * FROM audio_clips WHERE mediaStoreUri = :uri")
+    suspend fun byUri(uri: String): AudioClipEntity?
+
+    @Query("SELECT * FROM audio_clips WHERE id = :id")
+    suspend fun byId(id: Long): AudioClipEntity?
+
+    @Query("SELECT * FROM audio_clips")
+    suspend fun all(): List<AudioClipEntity>
+
+    /**
+     * `IGNORE`, e não `REPLACE`: o índice único em `mediaStoreUri` já garante um
+     * registro por arquivo, e `REPLACE` apagaria e reinseriria a linha com um id novo —
+     * o que dispararia o `SET_NULL` dos cortes que apontam para ela e apagaria
+     * justamente a linhagem que esta tabela existe para guardar.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(clip: AudioClipEntity): Long
+
+    @Query("DELETE FROM audio_clips WHERE mediaStoreUri = :uri")
+    suspend fun deleteByUri(uri: String)
+
+    /**
+     * Descarta o registro de arquivos que não estão mais na pasta.
+     *
+     * O MediaStore é a fonte de verdade sobre o que existe, e ele pode mudar sem
+     * passar pelo app — apagar um arquivo pelo gerenciador é o caso normal. Quem
+     * chama tem que garantir que [aliveUris] veio de uma listagem que realmente
+     * funcionou; passar uma lista vazia porque a consulta falhou limparia a tabela
+     * inteira. Ver a guarda em `AudioClipRepository.catalog`.
+     */
+    @Query("DELETE FROM audio_clips WHERE mediaStoreUri NOT IN (:aliveUris)")
+    suspend fun pruneMissing(aliveUris: List<String>)
+}

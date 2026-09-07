@@ -41,6 +41,9 @@ class AudioDownloadWorker(
         val streamUrl = inputData.getString(KEY_STREAM_URL) ?: return@withContext Result.failure()
         val name = inputData.getString(KEY_NAME) ?: "audio"
         val mime = inputData.getString(KEY_MIME) ?: "audio/mp4"
+        val sourceUrl = inputData.getString(KEY_SOURCE_URL).orEmpty()
+        val sourceTitle = inputData.getString(KEY_SOURCE_TITLE).orEmpty()
+        val durationMs = inputData.getLong(KEY_DURATION_MS, 0L)
 
         val container = (applicationContext as AlvoradaApp).container
         val store = container.audioLibraryStore
@@ -55,6 +58,17 @@ class AudioDownloadWorker(
         result.fold(
             onSuccess = {
                 store.publish(target)
+                // Depois de publicar, e não antes: o registro fala de um arquivo que
+                // existe. Um catálogo apontando para uma entrada pendente que a linha
+                // seguinte poderia apagar seria uma mentira barata de evitar.
+                container.audioClipRepository.recordDownload(
+                    uri = target.toString(),
+                    // O nome saneado, que é o que o MediaStore realmente gravou.
+                    displayName = AudioLibraryStore.sanitizeName(name),
+                    durationMs = durationMs,
+                    sourceUrl = sourceUrl,
+                    sourceTitle = sourceTitle,
+                )
                 Log.i(TAG, "Baixado: $name")
                 Result.success(workDataOf(KEY_RESULT_URI to target.toString()))
             },
@@ -137,6 +151,9 @@ class AudioDownloadWorker(
         const val KEY_STREAM_URL = "streamUrl"
         const val KEY_NAME = "name"
         const val KEY_MIME = "mime"
+        const val KEY_SOURCE_URL = "sourceUrl"
+        const val KEY_SOURCE_TITLE = "sourceTitle"
+        const val KEY_DURATION_MS = "durationMs"
         const val KEY_PROGRESS = "progress"
         const val KEY_RESULT_URI = "resultUri"
         const val KEY_ERROR = "error"
@@ -154,6 +171,9 @@ class AudioDownloadWorker(
                         KEY_STREAM_URL to audio.streamUrl,
                         KEY_NAME to fileName,
                         KEY_MIME to audio.mimeType,
+                        KEY_SOURCE_URL to audio.sourceUrl,
+                        KEY_SOURCE_TITLE to audio.title,
+                        KEY_DURATION_MS to audio.durationMs,
                     )
                 )
                 .build()

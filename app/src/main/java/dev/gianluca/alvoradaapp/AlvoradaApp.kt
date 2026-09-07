@@ -16,6 +16,7 @@ import dev.gianluca.alvoradaapp.data.MissionRepository
 import dev.gianluca.alvoradaapp.data.PanelRepository
 import dev.gianluca.alvoradaapp.data.PointsRepository
 import dev.gianluca.alvoradaapp.data.AlvoradaDatabase
+import dev.gianluca.alvoradaapp.data.AudioClipRepository
 import dev.gianluca.alvoradaapp.data.ChecklistRepository
 import dev.gianluca.alvoradaapp.evidence.EvidenceStore
 import dev.gianluca.alvoradaapp.work.DailySweepWorker
@@ -51,6 +52,8 @@ class AppContainer(context: Context) {
     val audioTrimmer: AudioTrimmer by lazy { AudioTrimmer(context, audioLibraryStore) }
 
     val waveformExtractor: WaveformExtractor by lazy { WaveformExtractor(context) }
+
+    val audioClipRepository: AudioClipRepository by lazy { AudioClipRepository(db) }
 
     val pointsRepository: PointsRepository by lazy { PointsRepository(db) }
 

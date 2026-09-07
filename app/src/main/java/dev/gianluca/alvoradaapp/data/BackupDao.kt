@@ -32,6 +32,7 @@ interface BackupDao {
     @Query("SELECT * FROM checklist_cycles") suspend fun checklistCycles(): List<ChecklistCycleEntity>
     @Query("SELECT * FROM checklist_item_states")
     suspend fun checklistItemStates(): List<ChecklistItemStateEntity>
+    @Query("SELECT * FROM audio_clips") suspend fun audioClips(): List<AudioClipEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putFolders(items: List<FolderEntity>)
@@ -75,6 +76,9 @@ interface BackupDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putChecklistItemStates(items: List<ChecklistItemStateEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putAudioClips(items: List<AudioClipEntity>)
+
     @Query("DELETE FROM evidence_photos") suspend fun wipePhotos()
     @Query("DELETE FROM mission_instances") suspend fun wipeInstances()
     @Query("DELETE FROM alarm_occurrences") suspend fun wipeOccurrences()
@@ -89,6 +93,7 @@ interface BackupDao {
     @Query("DELETE FROM checklist_cycles") suspend fun wipeChecklistCycles()
     @Query("DELETE FROM checklist_items") suspend fun wipeChecklistItems()
     @Query("DELETE FROM checklists") suspend fun wipeChecklists()
+    @Query("DELETE FROM audio_clips") suspend fun wipeAudioClips()
 
     /**
      * Substitui todo o conteúdo. Transação única: ou o backup entra inteiro, ou o
@@ -110,6 +115,7 @@ interface BackupDao {
         checklistItems: List<ChecklistItemEntity>,
         checklistCycles: List<ChecklistCycleEntity>,
         checklistItemStates: List<ChecklistItemStateEntity>,
+        audioClips: List<AudioClipEntity>,
     ) {
         // Apagar na ordem inversa das dependências. Os checklists vêm antes dos
         // alarmes: `checklist_items` aponta para `alarms`, e apagar o alarme
@@ -117,6 +123,7 @@ interface BackupDao {
         // item ser apagada de qualquer jeito.
         wipeChecklistItemStates(); wipeChecklistCycles(); wipeChecklistItems()
         wipeChecklists()
+        wipeAudioClips()
         wipePhotos(); wipeInstances(); wipeOccurrences(); wipeMissions(); wipeAlarms()
         wipePoints(); wipeRedemptions(); wipeRewards(); wipeFolders(); wipeStreak()
 
@@ -137,5 +144,11 @@ interface BackupDao {
         putChecklistItems(checklistItems)
         putChecklistCycles(checklistCycles)
         putChecklistItemStates(checklistItemStates)
+
+        // Ordenado por id: `audio_clips.parentClipId` aponta para a própria tabela, e
+        // o SQLite cobra a FK na hora da inserção. Um corte sempre nasce depois do
+        // original de onde saiu, então id crescente é a ordem topológica — e é uma
+        // invariante do autoincrement, não uma torcida.
+        putAudioClips(audioClips.sortedBy { it.id })
     }
 }

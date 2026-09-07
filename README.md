@@ -403,7 +403,8 @@ app porque uma URI do SAF depende de permissão revogável e de um arquivo que p
 A pasta pública troca esse risco por outro — o arquivo fica exposto a quem quiser apagá-lo —
 e o plano assume a troca: a permissão de mídia é concedida uma vez por app, e não por
 arquivo como no SAF, e a rede de segurança já existia (o `AlarmSoundPlayer` cai no som padrão
-do sistema em qualquer falha). Em troca, o caminho passou a ser **estável entre
+do sistema em qualquer falha, e a lista de despertadores marca quem perdeu o áudio — ver
+[Quando o arquivo some](#quando-o-arquivo-some)). Em troca, o caminho passou a ser **estável entre
 instalações**, o que consertou de graça um defeito antigo: restaurar um backup devolvia
 `soundUri` apontando para o diretório de outra instalação, e o som próprio voltava mudo em
 silêncio.
@@ -439,6 +440,30 @@ original. Foi o que dispensou FFmpeg nativo.
 cima do único arquivo que você tem seria uma forma boba de perder um som que deu trabalho
 para achar.
 
+### De onde cada arquivo veio
+
+O arquivo não carrega dentro de si a resposta para duas perguntas que aparecem depois: *de
+qual link isto veio?* e *isto aqui é o corte de qual original?*. Uma tabela lateral,
+`audio_clips`, guarda as duas.
+
+Ela é **lateral de propósito**: quem sabe quais arquivos existem continua sendo o MediaStore.
+Um MP3 largado na pasta pelo gerenciador de arquivos nunca passa por ela e mesmo assim
+aparece na biblioteca — apenas sem origem, que é a verdade sobre ele. Como o arquivo pode
+sumir sem passar pelo app, cada abertura da tela poda o que a listagem real não confirmou.
+
+A linhagem é o motivo principal de a tabela existir. Recortar um corte reencoda em cima do
+que já foi reencodado, e cada passagem dessas rebaixa a qualidade um pouco mais. Guardando
+o par original + intervalo, a tela de corte **oferece o original de volta** quando ele ainda
+está na pasta: o segundo corte sai da mesma fonte que o primeiro, em vez de sair do primeiro.
+
+Apagar o original não leva o corte junto — o corte é um arquivo por direito próprio, que só
+perde a chance de ser refeito da fonte (`ON DELETE SET NULL`).
+
+Nada disso encostou no `AlarmEntity`. De onde um som veio é informação do **arquivo**, não do
+despertador: o mesmo arquivo pode estar em três despertadores, e a resposta é a mesma nos
+três. O despertador continua guardando só `soundUri`/`soundIsSystem`/`soundLabel`, e nenhum
+caminho de gravação do editor mudou.
+
 A onda é decodificada de verdade, com `MediaExtractor` + `MediaCodec`, porque não existe
 atalho: nem o MediaStore nem o Media3 expõem envelope de amplitude. Uma música de 4 minutos
 são ~40 MB de amostras, então o decodificador acumula por balde e joga o PCM fora — o que a
@@ -464,6 +489,23 @@ na pasta com a qualidade que saiu.
 que apps do tipo NewPipe não estão na Play Store. Para este caso (app pessoal, sideload por
 APK, sem loja) isso não impede nada, mas fecha a porta da Play Store enquanto este código
 existir.
+
+### Quando o arquivo some
+
+A pasta é pública, e isso foi uma troca consciente: em troca de sobreviver à desinstalação e
+ser alimentada pelo gerenciador de arquivos, ela fica ao alcance de um app de limpeza ou de
+um toque errado.
+
+Nada quebra quando o arquivo some — `AlarmSoundPlayer` cai no som padrão do sistema em
+qualquer falha. O que se perderia sem aviso é a **explicação**, e a regra da V1 é que não
+existe despertador se comportando diferente sem dizer por quê. Por isso a lista marca em
+âmbar o despertador cujo áudio não existe mais: *"Áudio não encontrado · vai tocar o som
+padrão"*. Descobrir a troca de som na manhã em que ele toca é exatamente a descoberta errada.
+
+A linha não oferece ação própria porque a linha inteira já leva ao editor, que é onde se
+escolhe outro som. A checagem abre o descritor do arquivo — o que importa é se dá para
+**tocar**, não se sobrou uma linha no MediaStore falando dele — e roda uma vez por lista, e
+não por item: I/O no caminho do scroll seria pior que a informação que ele entrega.
 
 ### O download não morre se você trocar de app
 
@@ -521,10 +563,16 @@ Isso não é luxo: as evidências moram no diretório privado do app, fora de qu
 automático do Android. Ótimo para privacidade, péssimo para durabilidade — desinstalar
 apaga meses de registro sem aviso, e este arquivo é a única cópia que sobrevive.
 
-O formato está na **versão 3** — a 3 trouxe as quatro tabelas de checklist. Subir o número
-é o que faz uma versão anterior do app **recusar** o arquivo em vez de restaurá-lo pela
-metade: os campos novos são opcionais na desserialização, então sem o número ela aceitaria o
-backup e perderia os checklists em silêncio.
+O formato está na **versão 4** — a 3 trouxe as quatro tabelas de checklist, a 4 trouxe a
+procedência dos áudios. Subir o número é o que faz uma versão anterior do app **recusar** o
+arquivo em vez de restaurá-lo pela metade: os campos novos são opcionais na desserialização,
+então sem o número ela aceitaria o backup e perderia as tabelas novas em silêncio.
+
+**Os áudios continuam fora do ZIP; só a procedência entra.** Os arquivos moram em
+`Music/Alvorada/` e sobrevivem à desinstalação, que foi a decisão da Fase 3 — duplicá-los
+num backup que já carrega fotos inflaria o arquivo por nada. Restaurar no mesmo aparelho
+devolve as origens e a linhagem; em outro, as URIs do MediaStore não valem nada e a primeira
+abertura da biblioteca poda as linhas órfãs sozinha.
 
 A restauração **substitui** tudo em vez de mesclar. Mesclar exigiria decidir o que fazer
 com ids repetidos, missões editadas dos dois lados e fotos duplicadas — regras que
@@ -680,6 +728,7 @@ A Activity é só a cara do que o serviço está fazendo — por isso fechá-la 
 | Resolver link → stream (YouTube e URL direta)       | [MediaResolver.kt](app/src/main/java/dev/gianluca/alvoradaapp/audio/MediaResolver.kt) |
 | Download em foreground                              | [AudioDownloadWorker.kt](app/src/main/java/dev/gianluca/alvoradaapp/audio/AudioDownloadWorker.kt) |
 | Corte e desenho da onda                             | [AudioTrimmer.kt](app/src/main/java/dev/gianluca/alvoradaapp/audio/AudioTrimmer.kt) · [WaveformExtractor.kt](app/src/main/java/dev/gianluca/alvoradaapp/audio/WaveformExtractor.kt) |
+| Origem e linhagem dos áudios                        | [AudioClipRepository.kt](app/src/main/java/dev/gianluca/alvoradaapp/data/AudioClipRepository.kt) |
 
 **Convenções do schema:** instantes absolutos são epoch millis (`Long`); datas civis são
 `String` ISO `yyyy-MM-dd`, que ordena lexicograficamente e serve direto como chave de
@@ -697,6 +746,11 @@ porque a rodada de um checklist é um **intervalo com vencimento**, e não um in
 disparo — e ela existe mesmo num dia em que nenhum despertador toca. A categoria, essa sim,
 é compartilhada: `checklists` aponta para a mesma tabela `folders` dos despertadores, porque
 uma categoria é uma categoria.
+
+`audio_clips` fica de fora dessas duas famílias e não se liga a nenhuma delas: é a
+procedência dos arquivos de `Music/Alvorada/`, indexada pela URI do MediaStore, com uma
+auto-referência (`parentClipId`) que amarra um corte ao original de onde ele saiu. Não é
+dona de nada — o MediaStore continua sendo quem sabe quais arquivos existem.
 
 **Identidade.** O `applicationId` e o pacote Kotlin são `dev.gianluca.alvoradaapp`,
 renomeados a partir do antigo `dev.gianluca.wakeapp`. O Android trata `applicationId`
@@ -901,16 +955,23 @@ próximo.
 | 75 | Recortar um trecho: onda, alças, ±100ms, ouvir em loop                  | O loop toca só o intervalo; as alças acertam o ponto         |
 | 76 | Salvar o corte                                                          | Vira arquivo novo; **o original continua na lista**          |
 | 77 ★ | Pôr o corte num despertador, ativar silencioso e Não Perturbe, tocar   | Toca assim mesmo — o caminho novo preservou `USAGE_ALARM`    |
-| 78 ★ | Apagar o arquivo pelo gerenciador e deixar o alarme tocar              | Cai no som padrão do sistema, sem silêncio                   |
-| 79 ★ | Reiniciar o celular com um alarme de áudio próprio agendado            | Toca com o som certo                                         |
-| 80 | Começar um download e trocar de app no meio                             | Continua, com notificação de progresso                       |
-| 81 | Derrubar a rede no meio do download                                     | Falha com mensagem; **nenhum arquivo pela metade** na pasta  |
-| 82 ★ | Abrir a V2 pela primeira vez com sons próprios da V1 configurados      | Os sons migram para a pasta e continuam tocando              |
-| 83 | Exportar e restaurar backup com som próprio                             | Volta tocando — o defeito antigo de re-ancoragem             |
+| 78 ★ | Apagar o arquivo pelo gerenciador e voltar ao Relógio                  | A linha do despertador marca "Áudio não encontrado" em âmbar |
+| 79 ★ | Deixar esse mesmo alarme tocar                                          | Cai no som padrão do sistema, sem silêncio                   |
+| 80 ★ | Reiniciar o celular com um alarme de áudio próprio agendado            | Toca com o som certo                                         |
+| 81 | Começar um download e trocar de app no meio                             | Continua, com notificação de progresso                       |
+| 82 | Derrubar a rede no meio do download                                     | Falha com mensagem; **nenhum arquivo pela metade** na pasta  |
+| 83 ★ | Abrir a V2 pela primeira vez com sons próprios da V1 configurados      | Os sons migram para a pasta e continuam tocando              |
+| 84 | Exportar e restaurar backup com som próprio                             | Volta tocando — o defeito antigo de re-ancoragem             |
+| 85 | Abrir Áudios depois de baixar do YouTube                                | A linha do arquivo diz `Baixado de <título do vídeo>`        |
+| 86 | Recortar esse arquivo e voltar a Áudios                                 | O corte diz `Corte de "original" · 0:12–0:31`                |
+| 87 ★ | Abrir o recorte do **corte** na tela de cortar                         | Oferece "toque para recortar do original", e trocar recarrega a onda do original |
+| 88 | Apagar o original e abrir o corte na tela de cortar                      | Sem oferta de original — some sozinha, sem erro                 |
 
 O teste 73 é o mais importante da tabela, e não é sobre o YouTube: é a prova de que existe
-caminho quando o extrator quebrar. O 82 é a migração, que só acontece uma vez e por isso só
-dá para testar num aparelho que já tinha a V1.
+caminho quando o extrator quebrar. O 83 é a migração, que só acontece uma vez e por isso só
+dá para testar num aparelho que já tinha a V1. O 78 e o 87 são os dois que a V2 acrescentou
+depois: o primeiro é a regra de que nenhum despertador muda de comportamento em silêncio; o
+segundo é a única forma de recortar duas vezes sem rebaixar a qualidade em cascata.
 
 Os testes 62, 63 e 66 são os que mais importam. O 62 é o caso que o mecanismo de pulo antigo
 não resolveria; o 63 é a regra de que o despertador só se cala com **todos** os itens dele
@@ -971,7 +1032,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 O build debug leva o sufixo `.debug` no `applicationId`, então a versão de debug e a de
 release convivem no mesmo aparelho.
 
-**Migrations.** O banco está na **versão 6** e o schema é exportado para
+**Migrations.** O banco está na **versão 7** e o schema é exportado para
 [`app/schemas/`](app/schemas/). A partir da versão 3 toda mudança exige migration explícita
 — `fallbackToDestructiveMigration` vale só para downgrade, então avançar sem migration é
 erro de build, não perda silenciosa de dados. Exporte um backup antes de instalar uma
@@ -1000,9 +1061,10 @@ As quatro frentes estão no app.
 
 O que ficou para depois, deliberadamente:
 
-- **Os áudios não entram no ZIP de backup.** Eles agora sobrevivem à desinstalação, que é
-  melhor do que antes, mas perder o aparelho perde os arquivos — que são re-baixáveis. Se o
-  espelho no backup entrar, `sanitizedRelative()` em `BackupManager` exige exatamente dois
-  segmentos de caminho e precisaria de uma variante de profundidade 1.
+- **Os arquivos de áudio não entram no ZIP de backup** — só a procedência deles. Eles agora
+  sobrevivem à desinstalação, que é melhor do que antes, mas perder o aparelho perde os
+  arquivos — que são re-baixáveis. Se o espelho no backup entrar, `sanitizedRelative()` em
+  `BackupManager` exige exatamente dois segmentos de caminho e precisaria de uma variante de
+  profundidade 1.
 - **Checklist não exige foto**, e cobrança continua sendo mecânica de missão. Se fizer falta,
   o caminho é reusar `EvidenceStore` + `evidence_photos` com uma FK nova.

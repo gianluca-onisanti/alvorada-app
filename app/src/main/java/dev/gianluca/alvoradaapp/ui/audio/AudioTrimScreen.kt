@@ -1,6 +1,7 @@
 package dev.gianluca.alvoradaapp.ui.audio
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,9 +9,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
@@ -44,7 +48,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import dev.gianluca.alvoradaapp.AlvoradaApp
+import dev.gianluca.alvoradaapp.audio.AudioLibraryStore
 import dev.gianluca.alvoradaapp.audio.formatClipPosition
+import dev.gianluca.alvoradaapp.data.ClipOrigin
 import kotlinx.coroutines.launch
 import kotlin.math.roundToLong
 
@@ -59,6 +65,11 @@ import kotlin.math.roundToLong
  *
  * A pré-escuta não grava nada: usa o `ClippingConfiguration` do ExoPlayer, que toca só
  * o intervalo. Só o botão de confirmar chama o `Transformer`.
+ *
+ * Recortar um corte é o caminho que a tela desencoraja: cada passagem pelo
+ * `Transformer` reencoda em cima do que já foi reencodado. Quando o arquivo aberto tem
+ * um original catalogado e ele ainda está na pasta, a tela oferece trocar a fonte — o
+ * segundo corte sai da mesma origem que o primeiro, e não em cima dele.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,7 +77,10 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
     val context = LocalContext.current
     val container = remember { (context.applicationContext as AlvoradaApp).container }
     val scope = rememberCoroutineScope()
-    val uri = remember(sourceUri) { sourceUri.toUri() }
+    // A fonte é estado, e não parâmetro: trocar para o original é o ponto inteiro do
+    // atalho abaixo, e ele não deveria custar uma volta pela navegação.
+    var activeUri by remember(sourceUri) { mutableStateOf(sourceUri.toUri()) }
+    var origin by remember(sourceUri) { mutableStateOf<ClipOrigin?>(null) }
 
     var durationMs by remember { mutableStateOf(0L) }
     var peaks by remember { mutableStateOf(FloatArray(0)) }
@@ -77,25 +91,45 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var baseName by remember { mutableStateOf("audio") }
+    /** O nome com extensão, que é como o MediaStore conhece o arquivo. */
+    var sourceName by remember { mutableStateOf("audio") }
 
     val player = remember {
         ExoPlayer.Builder(context).build().apply { repeatMode = Player.REPEAT_MODE_ONE }
     }
     DisposableEffect(Unit) { onDispose { player.release() } }
 
-    LaunchedEffect(sourceUri) {
-        val file = container.audioLibraryStore.list().firstOrNull { it.uri == uri }
+    LaunchedEffect(activeUri) {
+        loadingPeaks = true
+        val files = container.audioLibraryStore.list()
+        val file = files.firstOrNull { it.uri == activeUri }
         durationMs = file?.durationMs ?: 0L
-        baseName = file?.displayName?.substringBeforeLast('.') ?: "audio"
+        sourceName = file?.displayName ?: "audio"
+        baseName = sourceName.substringBeforeLast('.')
+        startMs = 0L
         endMs = durationMs
-        peaks = container.waveformExtractor.peaks(uri)
+
+        // A linhagem só vale enquanto o original estiver mesmo na pasta. A tabela pode
+        // saber de um arquivo que o gerenciador já apagou — oferecer "recortar do
+        // original" e falhar ao carregar seria pior do que não oferecer nada.
+        val known = container.audioClipRepository.originOf(activeUri.toString())
+        val parentAlive = known?.parentUri?.let { uri ->
+            files.any { it.uri.toString() == uri }
+        } == true
+        origin = if (known != null && !parentAlive) {
+            known.copy(parentName = null, parentUri = null)
+        } else {
+            known
+        }
+
+        peaks = container.waveformExtractor.peaks(activeUri)
         loadingPeaks = false
     }
 
     fun applyClip() {
         player.setMediaItem(
             MediaItem.Builder()
-                .setUri(uri)
+                .setUri(activeUri)
                 .setClippingConfiguration(
                     MediaItem.ClippingConfiguration.Builder()
                         .setStartPositionMs(startMs)
@@ -153,6 +187,37 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
                 .padding(16.dp),
         ) {
             Text(baseName, style = MaterialTheme.typography.titleMedium)
+
+            // Só aparece quando há de fato um original na pasta para voltar. Um aviso
+            // sobre perda de qualidade sem a ação que a evita seria só má notícia.
+            origin?.takeIf { it.canRetrimFromOriginal }?.let { lineage ->
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            player.stop()
+                            playing = false
+                            activeUri = lineage.parentUri!!.toUri()
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Undo,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Isto já é um corte de \"${lineage.parentName}\" · " +
+                            "toque para recortar do original",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
             Spacer(Modifier.height(16.dp))
 
             if (loadingPeaks) {
@@ -238,10 +303,28 @@ fun AudioTrimScreen(sourceUri: String, onDone: () -> Unit) {
                     scope.launch {
                         val label = "$baseName (corte ${formatClipPosition(startMs)}" +
                             "-${formatClipPosition(endMs)}).m4a"
+                        val from = activeUri
+                        val fromName = sourceName
+                        val fromDuration = durationMs
+                        val cutStart = startMs
+                        val cutEnd = endMs
                         runCatching {
-                            container.audioTrimmer.trim(uri, startMs, endMs, label)
+                            container.audioTrimmer.trim(from, cutStart, cutEnd, label)
                         }
-                            .onSuccess { onDone() }
+                            .onSuccess { target ->
+                                // Depois do corte gravado, e sem poder derrubá-lo: o
+                                // arquivo é o resultado, a linhagem é a anotação.
+                                container.audioClipRepository.recordTrim(
+                                    uri = target.toString(),
+                                    displayName = AudioLibraryStore.sanitizeName(label),
+                                    sourceUri = from.toString(),
+                                    sourceName = fromName,
+                                    sourceDurationMs = fromDuration,
+                                    startMs = cutStart,
+                                    endMs = cutEnd,
+                                )
+                                onDone()
+                            }
                             .onFailure { error = it.message ?: "Não consegui recortar." }
                         saving = false
                     }

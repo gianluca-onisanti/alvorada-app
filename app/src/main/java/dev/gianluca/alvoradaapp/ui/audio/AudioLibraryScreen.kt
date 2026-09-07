@@ -45,12 +45,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import dev.gianluca.alvoradaapp.AlvoradaApp
 import dev.gianluca.alvoradaapp.alarm.AlarmSoundPlayer
 import dev.gianluca.alvoradaapp.audio.LibraryFile
 import dev.gianluca.alvoradaapp.audio.formatClipPosition
+import dev.gianluca.alvoradaapp.data.ClipOrigin
 import dev.gianluca.alvoradaapp.ui.components.AlvoradaTopBar
 import dev.gianluca.alvoradaapp.ui.components.EmptyState
 import dev.gianluca.alvoradaapp.ui.components.GlassCard
@@ -72,6 +74,7 @@ fun AudioLibraryScreen(onTrim: (String) -> Unit, onOpenDrawer: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var files by remember { mutableStateOf<List<LibraryFile>>(emptyList()) }
+    var origins by remember { mutableStateOf<Map<String, ClipOrigin>>(emptyMap()) }
     var reloadKey by remember { mutableStateOf(0) }
     var importing by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<LibraryFile?>(null) }
@@ -97,7 +100,12 @@ fun AudioLibraryScreen(onTrim: (String) -> Unit, onOpenDrawer: () -> Unit) {
         reloadKey++
     }
 
-    LaunchedEffect(reloadKey) { files = store.list() }
+    LaunchedEffect(reloadKey) {
+        files = store.list()
+        // Depois da listagem, e a partir dela: a lista real é o que decide o que
+        // continua existindo, e o catálogo é podado contra ela.
+        origins = container.audioClipRepository.catalog(files.map { it.uri.toString() })
+    }
 
     // Pré-escuta com o mesmo player do alarme, para ouvir o som como ele vai soar
     // às 6h — no canal de alarme, e não no de mídia.
@@ -205,6 +213,18 @@ fun AudioLibraryScreen(onTrim: (String) -> Unit, onOpenDrawer: () -> Unit) {
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                                // A origem só aparece quando existe. Um arquivo largado
+                                // na pasta na mão não tem procedência a mostrar, e
+                                // inventar uma linha genérica para ele seria ruído.
+                                describeOrigin(origins[file.uri.toString()])?.let { origin ->
+                                    Text(
+                                        origin,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
                             IconButton(onClick = { onTrim(file.uri.toString()) }) {
                                 Icon(Icons.Filled.ContentCut, contentDescription = "Recortar")
@@ -240,6 +260,7 @@ fun AudioLibraryScreen(onTrim: (String) -> Unit, onOpenDrawer: () -> Unit) {
                 TextButton(onClick = {
                     scope.launch {
                         store.delete(file.uri)
+                        container.audioClipRepository.forget(file.uri.toString())
                         deleting = null
                         reloadKey++
                     }
@@ -248,4 +269,25 @@ fun AudioLibraryScreen(onTrim: (String) -> Unit, onOpenDrawer: () -> Unit) {
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancelar") } },
         )
     }
+}
+
+/**
+ * Uma linha só sobre de onde o arquivo veio.
+ *
+ * A linhagem ganha da procedência quando as duas existem: saber que este é o recorte
+ * de 0:12 a 0:31 de outro arquivo é o que responde "por que tenho dois parecidos?",
+ * enquanto o link de origem os dois compartilham.
+ */
+private fun describeOrigin(origin: ClipOrigin?): String? {
+    val clip = origin?.clip ?: return null
+    val start = clip.trimStartMs
+    val end = clip.trimEndMs
+
+    if (start != null && end != null) {
+        val of = origin.parentName?.let { " de \"$it\"" }.orEmpty()
+        return "Corte$of · ${formatClipPosition(start)}–${formatClipPosition(end)}"
+    }
+    val title = clip.sourceTitle?.takeIf { it.isNotBlank() }
+    val url = clip.sourceUrl?.takeIf { it.isNotBlank() } ?: return null
+    return "Baixado de ${title ?: url}"
 }

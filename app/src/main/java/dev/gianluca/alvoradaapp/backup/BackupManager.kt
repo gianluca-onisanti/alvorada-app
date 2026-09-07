@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import dev.gianluca.alvoradaapp.data.AlarmEntity
+import dev.gianluca.alvoradaapp.data.AudioClipEntity
 import dev.gianluca.alvoradaapp.data.ChecklistCycleEntity
 import dev.gianluca.alvoradaapp.data.ChecklistEntity
 import dev.gianluca.alvoradaapp.data.ChecklistItemEntity
@@ -64,6 +65,7 @@ data class BackupEnvelope(
     val checklistItems: List<ChecklistItemEntity> = emptyList(),
     val checklistCycles: List<ChecklistCycleEntity> = emptyList(),
     val checklistItemStates: List<ChecklistItemStateEntity> = emptyList(),
+    val audioClips: List<AudioClipEntity> = emptyList(),
 )
 
 sealed interface BackupResult {
@@ -133,6 +135,11 @@ class BackupManager(
                 checklistItems = dao.checklistItems(),
                 checklistCycles = dao.checklistCycles(),
                 checklistItemStates = dao.checklistItemStates(),
+                // Só a procedência, nunca os arquivos: eles moram em `Music/Alvorada/`
+                // e sobrevivem à desinstalação, que foi a decisão da Fase 3. Restaurar
+                // no mesmo aparelho devolve as origens; em outro, as URIs não valem
+                // nada e a primeira abertura da biblioteca poda as linhas órfãs.
+                audioClips = dao.audioClips(),
             )
 
             var written = 0
@@ -242,6 +249,7 @@ class BackupManager(
                 checklistItems = data.checklistItems,
                 checklistCycles = data.checklistCycles,
                 checklistItemStates = data.checklistItemStates,
+                audioClips = data.audioClips,
             )
 
             BackupResult.Imported(restoredPhotos.size, data.alarms.size)
@@ -301,7 +309,14 @@ class BackupManager(
          * na desserialização, então sem o número ela aceitaria o backup e perderia
          * os checklists em silêncio.
          */
-        const val FORMAT_VERSION = 3
+        /**
+         * 4 traz a procedência dos áudios (`audio_clips`), sem os arquivos.
+         *
+         * Mesmo motivo de sempre para subir o número: os campos novos são opcionais
+         * na desserialização, então uma versão anterior aceitaria o arquivo e
+         * descartaria a tabela em silêncio.
+         */
+        const val FORMAT_VERSION = 4
         const val MANIFEST = "alvorada-backup.json"
 
         /**

@@ -24,8 +24,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChecklistItemEntity::class,
         ChecklistCycleEntity::class,
         ChecklistItemStateEntity::class,
+        AudioClipEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -43,6 +44,7 @@ abstract class AlvoradaDatabase : RoomDatabase() {
     abstract fun rewardDao(): RewardDao
     abstract fun streakDao(): StreakDao
     abstract fun checklistDao(): ChecklistDao
+    abstract fun audioClipDao(): AudioClipDao
 
     companion object {
 
@@ -160,13 +162,44 @@ abstract class AlvoradaDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Origem e linhagem dos áudios.
+         *
+         * Uma tabela só, e nenhuma coluna nova em `alarms`. De onde um som veio e de
+         * onde ele foi recortado é informação do **arquivo**, não do despertador — o
+         * mesmo arquivo pode estar em três despertadores, e a resposta é a mesma nos
+         * três. `AlarmEntity` continua guardando só `soundUri`/`soundIsSystem`/
+         * `soundLabel`, e nenhum caminho de gravação do editor muda por causa disto.
+         *
+         * Nasce vazia por design, e não por omissão: quem já tem arquivos na pasta
+         * segue com eles funcionando, apenas sem origem registrada — que é a verdade
+         * sobre eles, já que ninguém guardou de onde vieram na hora em que vieram.
+         *
+         * DDL transcrito de `app/schemas/.../7.json`, pelo mesmo motivo da 5→6: o Room
+         * confere a identidade do schema ao abrir o banco e recusa divergência de um
+         * detalhe.
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `audio_clips` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `mediaStoreUri` TEXT NOT NULL, `displayName` TEXT NOT NULL, `relativePath` TEXT NOT NULL, `durationMs` INTEGER NOT NULL, `sourceUrl` TEXT, `sourceTitle` TEXT, `parentClipId` INTEGER, `trimStartMs` INTEGER, `trimEndMs` INTEGER, `createdAt` INTEGER NOT NULL, FOREIGN KEY(`parentClipId`) REFERENCES `audio_clips`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )"
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_audio_clips_mediaStoreUri` ON `audio_clips` (`mediaStoreUri`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_audio_clips_parentClipId` ON `audio_clips` (`parentClipId`)"
+                )
+            }
+        }
+
         fun build(context: Context): AlvoradaDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 AlvoradaDatabase::class.java,
                 "wake.db",
             )
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 // Só para downgrade — avançar sem migration passa a ser erro, e não
                 // uma perda silenciosa de dados.
                 .fallbackToDestructiveMigrationOnDowngrade()

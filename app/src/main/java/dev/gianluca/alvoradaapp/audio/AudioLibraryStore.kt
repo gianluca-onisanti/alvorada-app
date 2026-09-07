@@ -150,12 +150,21 @@ class AudioLibraryStore(private val context: Context) {
     /** O caminho legível, para dizer ao usuário onde os arquivos estão. */
     fun folderLabel(): String = "${Environment.DIRECTORY_MUSIC}/$FOLDER"
 
-    private fun String.sanitized(): String =
-        replace(Regex("""[\\/:*?"<>|]"""), "_").take(120).ifBlank { "audio" }
+    private fun String.sanitized(): String = sanitizeName(this)
 
     companion object {
         const val FOLDER = "Alvorada"
         val RELATIVE_PATH = "${Environment.DIRECTORY_MUSIC}/$FOLDER/"
         private const val TAG = "AudioLibraryStore"
+
+        /**
+         * O nome que o arquivo vai ter de verdade.
+         *
+         * Exposto porque quem registra a procedência precisa gravar o mesmo nome
+         * que o MediaStore vai devolver depois — senão a linhagem mostraria um
+         * nome de original que não bate com nenhuma linha da lista.
+         */
+        fun sanitizeName(raw: String): String =
+            raw.replace(Regex("""[\\/:*?"<>|]"""), "_").take(120).ifBlank { "audio" }
     }
 }

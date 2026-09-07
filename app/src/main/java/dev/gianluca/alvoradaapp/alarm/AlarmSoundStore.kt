@@ -123,6 +123,33 @@ class AlarmSoundStore(
             moved
         }
 
+    /**
+     * O arquivo de som deste despertador ainda existe?
+     *
+     * Existe porque a V2 tirou os sons próprios de dentro do app e os pôs numa pasta
+     * pública, onde o usuário — ou um app de limpeza — pode apagá-los. O
+     * `AlarmSoundPlayer` já cai no som padrão do sistema quando o arquivo falha, então
+     * nada quebra; o que se perde sem esta checagem é o **aviso**. A regra da V1 é que
+     * não existe despertador se comportando diferente sem explicação, e descobrir a
+     * troca de som na manhã em que ele toca é exatamente a descoberta errada.
+     *
+     * `null` é o som padrão do sistema, que nunca falta. Abrir o descritor, e não só
+     * consultar o MediaStore, é o que responde a pergunta certa: o que importa é se dá
+     * para **tocar** o arquivo, não se sobrou uma linha falando dele.
+     */
+    suspend fun soundExists(uri: String?): Boolean = withContext(Dispatchers.IO) {
+        if (uri.isNullOrBlank()) return@withContext true
+        val parsed = runCatching { Uri.parse(uri) }.getOrNull() ?: return@withContext false
+
+        when (parsed.scheme) {
+            "file" -> parsed.path?.let { File(it).exists() } == true
+            else -> runCatching {
+                context.contentResolver.openAssetFileDescriptor(parsed, "r")
+                    ?.use { true } ?: false
+            }.getOrDefault(false)
+        }
+    }
+
     private fun queryDisplayName(uri: Uri): String? = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor ->

@@ -469,3 +469,59 @@ data class ChecklistItemStateEntity(
     val xpAwarded: Int = 0,
     val coinAwarded: Int = 0,
 )
+
+/**
+ * A procedência de um arquivo de `Music/Alvorada/`.
+ *
+ * Tabela lateral, e de propósito: quem sabe **quais** arquivos existem continua sendo o
+ * MediaStore. Um MP3 largado na pasta pelo gerenciador de arquivos nunca passa por aqui
+ * e mesmo assim aparece na biblioteca — simplesmente sem origem, que é a verdade sobre
+ * ele. O que só esta tabela sabe é o que o arquivo não carrega dentro de si: de qual
+ * link ele veio, e de qual original ele foi recortado.
+ *
+ * A linhagem é o motivo principal de a tabela existir. Recortar um corte reencoda em
+ * cima de um áudio já reencodado, e cada rodada dessas rebaixa a qualidade um pouco
+ * mais. Guardar [parentClipId] com [trimStartMs]/[trimEndMs] deixa a tela de recorte
+ * oferecer o original de volta, para o segundo corte sair da mesma fonte que o
+ * primeiro em vez de sair do primeiro.
+ *
+ * O `SET_NULL` do FK para si mesma é deliberado: apagar o original não pode levar o
+ * corte junto — o corte é um arquivo por direito próprio, que só perde a chance de ser
+ * refeito da fonte.
+ */
+@Entity(
+    tableName = "audio_clips",
+    foreignKeys = [
+        ForeignKey(
+            entity = AudioClipEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["parentClipId"],
+            onDelete = ForeignKey.SET_NULL,
+        ),
+    ],
+    indices = [
+        Index(value = ["mediaStoreUri"], unique = true),
+        Index("parentClipId"),
+    ],
+)
+@Serializable
+data class AudioClipEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /**
+     * A `content://` do MediaStore. É a chave de verdade desta tabela: é por ela que a
+     * biblioteca casa cada arquivo listado com a origem dele. Única por índice, porque
+     * dois registros para o mesmo arquivo seriam duas respostas para a mesma pergunta.
+     */
+    val mediaStoreUri: String,
+    val displayName: String,
+    val relativePath: String,
+    val durationMs: Long = 0,
+    /** O link que o usuário colou. Nulo quando o arquivo não veio de download. */
+    val sourceUrl: String? = null,
+    /** O título que o resolvedor devolveu — o nome do vídeo, não o do arquivo. */
+    val sourceTitle: String? = null,
+    val parentClipId: Long? = null,
+    val trimStartMs: Long? = null,
+    val trimEndMs: Long? = null,
+    val createdAt: Long,
+)
