@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Alvorada</string>
+
+    <string name="channel_alarm_name">Despertadores</string>
+    <string name="channel_alarm_desc">Alarmes e cobranças de evidência. Não desative.</string>
+
+    <string name="notif_alarm_title">Despertador</string>
+    <string name="notif_alarm_action_open">Abrir</string>
+</resources>

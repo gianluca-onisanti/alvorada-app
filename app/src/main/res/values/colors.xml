@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fundo do ícone adaptativo: o índigo do logo. Precisa ser um pouco mais claro
+         que o fundo do app (#120E22) para o ícone não sumir num tema escuro. -->
+    <color name="ic_launcher_background">#2E1B5E</color>
+</resources>

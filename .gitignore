@@ -1,0 +1,73 @@
+# ==========================
+# Gradle / Build
+# ==========================
+.gradle/
+build/
+out/
+captures/
+.gradletasknamecache
+.kotlin/
+
+# Native build
+.externalNativeBuild
+.cxx/
+
+# ==========================
+# Configuração local (NUNCA versionar)
+# ==========================
+local.properties
+keystore.properties
+secrets.properties
+*.env
+.env
+.env.*
+
+# ==========================
+# Credenciais / Assinatura
+# ==========================
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+!debug.keystore
+google-services.json
+
+# ==========================
+# Artefatos de build Android
+# ==========================
+*.apk
+*.aab
+*.aar
+*.ap_
+*.dex
+*.class
+output-metadata.json
+lint-results*.xml
+lint/
+
+# ==========================
+# IDE / Editores
+# ==========================
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.navigation/
+
+# ==========================
+# Sistema operacional
+# ==========================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ==========================
+# Logs / Profiling / Temporários
+# ==========================
+*.log
+*.hprof
+*.tmp
+*~

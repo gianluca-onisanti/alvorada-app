@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+        A partir do Android 12 o sistema desenha uma splash com o ícone do app, sempre —
+        não dá para desligar. Sem estes dois atributos ela usaria o ícone do launcher
+        recortado pela máscara do sistema, num fundo branco que fura o olho de quem
+        abriu o app às 6h para desligar um despertador.
+
+        `splash_logo` é um asset separado do foreground do launcher de propósito: a
+        splash pede o conteúdo em 2/3 do quadro, e o foreground já carrega a margem
+        maior do ícone adaptativo assada dentro — reusá-lo mostraria um logo minúsculo.
+    -->
+    <style name="Theme.Alvorada" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+    </style>
+
+</resources>
