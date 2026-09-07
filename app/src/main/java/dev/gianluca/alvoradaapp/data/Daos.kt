@@ -54,6 +54,14 @@ interface AlarmDao {
     @Query("UPDATE alarms SET skipNextFireAt = :fireAt WHERE id = :id")
     suspend fun setSkipNextFireAt(id: Long, fireAt: Long?)
 
+    /** `null` destrava o despertador. Ver `AlarmEntity.suppressedUntil`. */
+    @Query("UPDATE alarms SET suppressedUntil = :until WHERE id = :id")
+    suspend fun setSuppressedUntil(id: Long, until: Long?)
+
+    /** Reaponta um som próprio migrado para o novo caminho na biblioteca pública. */
+    @Query("UPDATE alarms SET soundUri = :to WHERE soundUri = :from")
+    suspend fun rewriteSoundUri(from: String, to: String)
+
     @Delete
     suspend fun delete(alarm: AlarmEntity)
 }
@@ -393,6 +401,14 @@ interface PointsDao {
     @Query("SELECT COUNT(*) FROM points_ledger WHERE missionInstanceId = :instanceId")
     suspend fun countForInstance(instanceId: Long): Int
 
+    /** A mesma guarda, para um item de checklist marcado. */
+    @Query("SELECT COUNT(*) FROM points_ledger WHERE checklistItemStateId = :stateId")
+    suspend fun countForChecklistItemState(stateId: Long): Int
+
+    /** A mesma guarda, para o bônus de rodada fechada. */
+    @Query("SELECT COUNT(*) FROM points_ledger WHERE checklistCycleId = :cycleId")
+    suspend fun countForChecklistCycle(cycleId: Long): Int
+
     @Query("SELECT COALESCE(SUM(xpDelta), 0) FROM points_ledger WHERE timestamp >= :since")
     fun observeXpSince(since: Long): Flow<Int>
 
@@ -440,4 +456,146 @@ interface StreakDao {
 
     @Upsert
     suspend fun upsert(state: StreakStateEntity)
+}
+
+@Dao
+interface ChecklistDao {
+
+    // ---- cadastro
+
+    @Query("SELECT * FROM checklists ORDER BY sortOrder, name")
+    fun observeAll(): Flow<List<ChecklistEntity>>
+
+    @Query("SELECT * FROM checklists WHERE enabled = 1")
+    suspend fun getEnabled(): List<ChecklistEntity>
+
+    @Query("SELECT * FROM checklists WHERE id = :id")
+    suspend fun getById(id: Long): ChecklistEntity?
+
+    @Upsert
+    suspend fun upsert(checklist: ChecklistEntity): Long
+
+    @Delete
+    suspend fun delete(checklist: ChecklistEntity)
+
+    // ---- itens
+
+    @Query(
+        "SELECT * FROM checklist_items WHERE checklistId = :checklistId AND archived = 0 " +
+            "ORDER BY sortOrder, id"
+    )
+    fun observeItems(checklistId: Long): Flow<List<ChecklistItemEntity>>
+
+    @Query("SELECT * FROM checklist_items WHERE archived = 0 ORDER BY sortOrder, id")
+    fun observeAllItems(): Flow<List<ChecklistItemEntity>>
+
+    @Query("SELECT * FROM checklist_items WHERE checklistId = :checklistId AND archived = 0")
+    suspend fun getItems(checklistId: Long): List<ChecklistItemEntity>
+
+    @Query("SELECT * FROM checklist_items WHERE id = :id")
+    suspend fun getItem(id: Long): ChecklistItemEntity?
+
+    /**
+     * Os itens que apontam para este despertador.
+     *
+     * É por aqui que a tela do alarme descobre o que mostrar quando toca, e por aqui
+     * que apagar um checklist sabe quais despertadores precisa destravar.
+     */
+    @Query("SELECT * FROM checklist_items WHERE alarmId = :alarmId AND archived = 0")
+    suspend fun getItemsForAlarm(alarmId: Long): List<ChecklistItemEntity>
+
+    @Upsert
+    suspend fun upsertItem(item: ChecklistItemEntity): Long
+
+    @Delete
+    suspend fun deleteItem(item: ChecklistItemEntity)
+
+    // ---- rodadas
+
+    /**
+     * `IGNORE` e não `ABORT`: o índice único em (checklistId, periodStart) é a
+     * garantia real de rodada única, e duas aberturas simultâneas — a tela abrindo
+     * junto com a varredura das 03h — são uma corrida esperada, não um erro.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertCycle(cycle: ChecklistCycleEntity): Long
+
+    @Query("SELECT * FROM checklist_cycles WHERE checklistId = :checklistId AND periodStart = :periodStart")
+    suspend fun getCycle(checklistId: Long, periodStart: String): ChecklistCycleEntity?
+
+    @Query("SELECT * FROM checklist_cycles WHERE id = :id")
+    suspend fun getCycleById(id: Long): ChecklistCycleEntity?
+
+    @Query("SELECT * FROM checklist_cycles WHERE status = 'OPEN'")
+    suspend fun getOpenCycles(): List<ChecklistCycleEntity>
+
+    @Query("SELECT * FROM checklist_cycles WHERE status IN ('OPEN', 'COMPLETED')")
+    fun observeLiveCycles(): Flow<List<ChecklistCycleEntity>>
+
+    @Update
+    suspend fun updateCycle(cycle: ChecklistCycleEntity)
+
+    // ---- estado dos itens na rodada
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertStates(states: List<ChecklistItemStateEntity>): List<Long>
+
+    @Query("SELECT * FROM checklist_item_states WHERE cycleId = :cycleId")
+    suspend fun getStates(cycleId: Long): List<ChecklistItemStateEntity>
+
+    @Query("SELECT * FROM checklist_item_states WHERE cycleId = :cycleId AND itemId = :itemId")
+    suspend fun getState(cycleId: Long, itemId: Long): ChecklistItemStateEntity?
+
+    @Query(
+        "SELECT s.* FROM checklist_item_states s " +
+            "INNER JOIN checklist_cycles c ON c.id = s.cycleId " +
+            "WHERE c.status IN ('OPEN', 'COMPLETED')"
+    )
+    fun observeLiveStates(): Flow<List<ChecklistItemStateEntity>>
+
+    @Update
+    suspend fun updateState(state: ChecklistItemStateEntity)
+}
+
+/**
+ * Origem e linhagem dos arquivos da biblioteca.
+ *
+ * Sem `Flow`: a biblioteca é montada a partir do MediaStore, que não observa, então um
+ * fluxo aqui prometeria uma reatividade que a outra metade da tela não tem.
+ */
+@Dao
+interface AudioClipDao {
+
+    @Query("SELECT * FROM audio_clips WHERE mediaStoreUri = :uri")
+    suspend fun byUri(uri: String): AudioClipEntity?
+
+    @Query("SELECT * FROM audio_clips WHERE id = :id")
+    suspend fun byId(id: Long): AudioClipEntity?
+
+    @Query("SELECT * FROM audio_clips")
+    suspend fun all(): List<AudioClipEntity>
+
+    /**
+     * `IGNORE`, e não `REPLACE`: o índice único em `mediaStoreUri` já garante um
+     * registro por arquivo, e `REPLACE` apagaria e reinseriria a linha com um id novo —
+     * o que dispararia o `SET_NULL` dos cortes que apontam para ela e apagaria
+     * justamente a linhagem que esta tabela existe para guardar.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(clip: AudioClipEntity): Long
+
+    @Query("DELETE FROM audio_clips WHERE mediaStoreUri = :uri")
+    suspend fun deleteByUri(uri: String)
+
+    /**
+     * Descarta o registro de arquivos que não estão mais na pasta.
+     *
+     * O MediaStore é a fonte de verdade sobre o que existe, e ele pode mudar sem
+     * passar pelo app — apagar um arquivo pelo gerenciador é o caso normal. Quem
+     * chama tem que garantir que [aliveUris] veio de uma listagem que realmente
+     * funcionou; passar uma lista vazia porque a consulta falhou limparia a tabela
+     * inteira. Ver a guarda em `AudioClipRepository.catalog`.
+     */
+    @Query("DELETE FROM audio_clips WHERE mediaStoreUri NOT IN (:aliveUris)")
+    suspend fun pruneMissing(aliveUris: List<String>)
 }

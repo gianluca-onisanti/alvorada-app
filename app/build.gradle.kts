@@ -14,8 +14,8 @@ android {
         applicationId = "dev.gianluca.alvoradaapp"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-fase0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     buildTypes {
@@ -82,6 +82,12 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
+
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.common)
+    implementation(libs.okhttp)
+    implementation(libs.newpipe.extractor)
 
     testImplementation(libs.junit)
 }

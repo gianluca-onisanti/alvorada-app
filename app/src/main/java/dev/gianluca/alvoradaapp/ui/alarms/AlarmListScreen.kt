@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoDelete
@@ -24,12 +23,13 @@ import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.MusicOff
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,8 +39,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -66,7 +67,9 @@ import dev.gianluca.alvoradaapp.data.FolderWithAlarms
 import dev.gianluca.alvoradaapp.data.describeRepeat
 import dev.gianluca.alvoradaapp.data.isOneShot
 import dev.gianluca.alvoradaapp.data.outlook
+import dev.gianluca.alvoradaapp.ui.components.AlvoradaTopBar
 import dev.gianluca.alvoradaapp.ui.components.CategoryStripe
+import dev.gianluca.alvoradaapp.ui.components.ColorDot
 import dev.gianluca.alvoradaapp.ui.components.formatClock
 import dev.gianluca.alvoradaapp.ui.components.formatFireClock
 import dev.gianluca.alvoradaapp.ui.components.formatTimeUntil
@@ -75,11 +78,11 @@ import dev.gianluca.alvoradaapp.ui.folders.FolderDialog
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlarmListScreen(
     onEditAlarm: (Long) -> Unit,
     onCreateAlarm: (oneShot: Boolean) -> Unit,
+    onOpenDrawer: () -> Unit,
 ) {
     val context = LocalContext.current
     val container = remember { (context.applicationContext as AlvoradaApp).container }
@@ -93,16 +96,39 @@ fun AlarmListScreen(
     var choosingKind by remember { mutableStateOf(false) }
     var disabling by remember { mutableStateOf<AlarmEntity?>(null) }
 
+    // Os despertadores cujo arquivo de som sumiu da pasta.
+    //
+    // Calculado uma vez por lista, e não por linha: cada checagem abre um descritor de
+    // arquivo, e fazer isso ao desenhar cada item colocaria I/O no caminho do scroll.
+    // A chave é o par (id, som) de cada despertador, então trocar o som de um deles
+    // refaz a conta e mexer em qualquer outra coisa não refaz.
+    var missingSound by remember { mutableStateOf(emptySet<Long>()) }
+    val soundKeys = remember(folders) {
+        folders.flatMap { group -> group.alarms.map { it.id to it.soundUri } }
+    }
+    LaunchedEffect(soundKeys) {
+        missingSound = soundKeys
+            .filter { (_, uri) -> uri != null && !container.soundStore.soundExists(uri) }
+            .map { (id, _) -> id }
+            .toSet()
+    }
+
     Scaffold(
+        // Transparente para o gradiente de `AlvoradaBackground` chegar até aqui:
+        // o padrão do Scaffold é `background` opaco, que cobriria o fundo inteiro
+        // e deixaria as superfícies de vidro sem nada para deixar passar.
+        containerColor = Color.Transparent,
+        // Obrigatório junto do container transparente: o Scaffold deriva o
+        // contentColor do containerColor, e `contentColorFor(Transparent)` não
+        // resolve nenhum papel do tema — o texto herdaria preto sobre o fundo
+        // escuro e simplesmente desapareceria.
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
-            TopAppBar(
-                title = { Text("Relógio") },
-                actions = {
-                    IconButton(onClick = { creatingFolder = true }) {
-                        Icon(Icons.Filled.CreateNewFolder, contentDescription = "Nova pasta")
-                    }
-                },
-            )
+            AlvoradaTopBar("Relógio", onOpenDrawer) {
+                IconButton(onClick = { creatingFolder = true }) {
+                    Icon(Icons.Filled.CreateNewFolder, contentDescription = "Nova pasta")
+                }
+            }
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { choosingKind = true }) {
@@ -164,6 +190,7 @@ fun AlarmListScreen(
                         alarm = alarm,
                         folderColor = group.folder.colorHex,
                         outlook = repository.outlookOf(alarm),
+                        soundMissing = alarm.id in missingSound,
                         onClick = { onEditAlarm(alarm.id) },
                         onToggle = { enabled ->
                             // Ligar é uma decisão só; desligar são duas — por isso a
@@ -267,12 +294,7 @@ private fun FolderHeader(
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.size(6.dp))
-        Box(
-            Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(parseColor(group.folder.colorHex))
-        )
+        ColorDot(group.folder.colorHex)
         Spacer(Modifier.size(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -329,6 +351,7 @@ private fun AlarmRow(
     alarm: AlarmEntity,
     folderColor: String,
     outlook: FireOutlook,
+    soundMissing: Boolean,
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onCancelSkip: () -> Unit,
@@ -412,6 +435,52 @@ private fun AlarmRow(
                         Spacer(Modifier.size(4.dp))
                         Text(
                             text = "${formatFireClock(skipped)} pulado · toque para desfazer",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                }
+
+                // O som que não existe mais. Em âmbar, e não na cor da pasta, porque
+                // isto não é informação de rotina: é uma promessa que o app não vai
+                // conseguir cumprir, e a hora de descobrir é agora — não na manhã em
+                // que o despertador toca com o som padrão do sistema. Sem ação
+                // própria: a linha inteira já leva ao editor, que é onde se escolhe
+                // outro som.
+                if (soundMissing) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.MusicOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.tertiary,
+                        )
+                        Spacer(Modifier.size(4.dp))
+                        Text(
+                            text = "Áudio não encontrado · vai tocar o som padrão",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
+                }
+
+                // Pela mesma razão do bloco acima: um despertador que não toca precisa
+                // dizer por quê. A diferença é que este não oferece desfazer — quem
+                // calou foi o checklist, e o caminho de destravar é desmarcar o item
+                // lá, não aqui.
+                outlook.suppressedUntil?.let { until ->
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Checklist,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.secondary,
+                        )
+                        Spacer(Modifier.size(4.dp))
+                        Text(
+                            text = "Checklist cumprido · volta ${formatTimeUntil(until)}",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.secondary,
                         )

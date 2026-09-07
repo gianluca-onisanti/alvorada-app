@@ -20,16 +20,12 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -52,6 +48,7 @@ import dev.gianluca.alvoradaapp.data.GalleryGroup
 import dev.gianluca.alvoradaapp.data.GalleryGrouping
 import dev.gianluca.alvoradaapp.data.GalleryPhoto
 import dev.gianluca.alvoradaapp.data.PanelRepository
+import dev.gianluca.alvoradaapp.ui.components.AlvoradaTopBar
 import dev.gianluca.alvoradaapp.ui.components.ColorDot
 import dev.gianluca.alvoradaapp.ui.components.EmptyState
 import dev.gianluca.alvoradaapp.ui.components.parseColor
@@ -74,9 +71,8 @@ import java.util.Locale
  * despertador vem sendo cumprido?". Daí o seletor — e daí ele voltar sempre para o
  * dia ao reabrir a tela, que é a pergunta mais frequente.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GalleryScreen() {
+fun GalleryScreen(onOpenDrawer: () -> Unit) {
     val context = LocalContext.current
     val container = remember { (context.applicationContext as AlvoradaApp).container }
 
@@ -89,7 +85,16 @@ fun GalleryScreen() {
     var viewing by remember { mutableStateOf<GalleryPhoto?>(null) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Galeria") }) },
+        // Transparente para o gradiente de `AlvoradaBackground` chegar até aqui:
+        // o padrão do Scaffold é `background` opaco, que cobriria o fundo inteiro
+        // e deixaria as superfícies de vidro sem nada para deixar passar.
+        containerColor = Color.Transparent,
+        // Obrigatório junto do container transparente: o Scaffold deriva o
+        // contentColor do containerColor, e `contentColorFor(Transparent)` não
+        // resolve nenhum papel do tema — o texto herdaria preto sobre o fundo
+        // escuro e simplesmente desapareceria.
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        topBar = { AlvoradaTopBar("Galeria", onOpenDrawer) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -193,7 +198,7 @@ private fun Thumbnail(photo: GalleryPhoto, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(MaterialTheme.shapes.medium)
             .clickable(onClick = onClick)
     ) {
         AsyncImage(
@@ -240,12 +245,7 @@ private fun PhotoViewer(photo: GalleryPhoto, onDismiss: () -> Unit) {
                     .padding(20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(parseColor(photo.folderColor))
-                )
+                ColorDot(photo.folderColor)
                 Spacer(Modifier.size(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(

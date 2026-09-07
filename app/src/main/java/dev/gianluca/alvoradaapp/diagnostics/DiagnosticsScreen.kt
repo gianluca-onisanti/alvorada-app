@@ -13,13 +13,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +25,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,12 +33,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.gianluca.alvoradaapp.AlvoradaApp
+import dev.gianluca.alvoradaapp.ui.components.AlvoradaTopBar
 import dev.gianluca.alvoradaapp.ui.settings.AboutCard
 import dev.gianluca.alvoradaapp.ui.settings.BackupCard
+import dev.gianluca.alvoradaapp.ui.settings.ThemeCard
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -54,20 +54,22 @@ import java.time.format.DateTimeFormatter
  * O teste de 1 minuto é o instrumento — agende, bloqueie a tela, espere. Se não
  * tocar aqui, não vai tocar às 6h da manhã.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DiagnosticsScreen(refreshKey: Int, onBack: () -> Unit) {
+fun DiagnosticsScreen(refreshKey: Int, onOpenDrawer: () -> Unit) {
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Ajustes") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Voltar")
-                    }
-                },
-            )
-        },
+        // Transparente para o gradiente de `AlvoradaBackground` chegar até aqui:
+        // o padrão do Scaffold é `background` opaco, que cobriria o fundo inteiro
+        // e deixaria as superfícies de vidro sem nada para deixar passar.
+        containerColor = Color.Transparent,
+        // Obrigatório junto do container transparente: o Scaffold deriva o
+        // contentColor do containerColor, e `contentColorFor(Transparent)` não
+        // resolve nenhum papel do tema — o texto herdaria preto sobre o fundo
+        // escuro e simplesmente desapareceria.
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        // Ajustes é destino do menu agora, e não uma tela empilhada sobre o
+        // Painel: o ícone é o de menu, e não a seta de voltar. Quem chegou pelo
+        // aviso de pendências volta pelo botão de voltar do sistema.
+        topBar = { AlvoradaTopBar("Ajustes", onOpenDrawer) },
     ) { padding ->
         DiagnosticsContent(refreshKey = refreshKey, modifier = Modifier.padding(padding))
     }
@@ -227,6 +229,8 @@ private fun DiagnosticsContent(refreshKey: Int, modifier: Modifier = Modifier) {
                 }
             }
         }
+
+        item { ThemeCard() }
 
         item { BackupCard() }
 

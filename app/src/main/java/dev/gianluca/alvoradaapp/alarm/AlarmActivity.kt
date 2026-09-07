@@ -97,8 +97,8 @@ class AlarmActivity : ComponentActivity() {
                         ringing != null -> RingingScreen(
                             state = ringing!!,
                             onSnooze = { AlarmService.snooze(this@AlarmActivity) },
-                            onDismiss = { done ->
-                                AlarmService.dismiss(this@AlarmActivity, done)
+                            onDismiss = { done, doneChecklist ->
+                                AlarmService.dismiss(this@AlarmActivity, done, doneChecklist)
                             },
                             onPhoto = { cameraFor = it },
                         )
@@ -139,7 +139,8 @@ class AlarmActivity : ComponentActivity() {
 private fun RingingScreen(
     state: RingingState,
     onSnooze: () -> Unit,
-    onDismiss: (Set<Long>) -> Unit,
+    /** (missões marcadas, itens de checklist marcados) — conjuntos separados. */
+    onDismiss: (Set<Long>, Set<Long>) -> Unit,
     onPhoto: (Long) -> Unit,
 ) {
     var now by remember { mutableStateOf(LocalTime.now()) }
@@ -153,6 +154,12 @@ private fun RingingScreen(
     // Missões sem foto podem ser marcadas aqui mesmo — "tomei o remédio" enquanto
     // você está de pé na frente do celular, sem depender de voltar ao app depois.
     val checked: SnapshotStateList<Long> = remember(state.occurrenceId) {
+        emptyList<Long>().toMutableStateList()
+    }
+
+    // Lista própria pela mesma razão do extra próprio no Intent: os ids das duas
+    // tabelas colidem, e um conjunto só marcaria o item errado.
+    val checkedChecklist: SnapshotStateList<Long> = remember(state.occurrenceId) {
         emptyList<Long>().toMutableStateList()
     }
 
@@ -265,6 +272,38 @@ private fun RingingScreen(
             Spacer(Modifier.height(8.dp))
         }
 
+        // Itens de checklist deste despertador que ainda faltam nesta rodada.
+        // Marcar aqui cala o despertador até a rodada virar — é o mesmo gesto que a
+        // tela de Checklists oferece, no momento em que ele importa.
+        if (state.checklistItems.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Checklist",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(4.dp))
+            state.checklistItems.forEach { run ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = run.item.id in checkedChecklist,
+                        onCheckedChange = {
+                            if (it) checkedChecklist.add(run.item.id)
+                            else checkedChecklist.remove(run.item.id)
+                        },
+                    )
+                    Text(
+                        run.item.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+
         // ------------------------------------------------------------ ações
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -290,7 +329,7 @@ private fun RingingScreen(
             }
 
             Button(
-                onClick = { onDismiss(checked.toSet()) },
+                onClick = { onDismiss(checked.toSet(), checkedChecklist.toSet()) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(60.dp),

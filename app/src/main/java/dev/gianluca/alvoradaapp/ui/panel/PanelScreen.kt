@@ -16,10 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -29,7 +26,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,7 +33,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -49,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -56,6 +52,8 @@ import androidx.compose.ui.unit.sp
 import dev.gianluca.alvoradaapp.AlvoradaApp
 import dev.gianluca.alvoradaapp.core.Leveling
 import dev.gianluca.alvoradaapp.diagnostics.SystemChecks
+import dev.gianluca.alvoradaapp.ui.components.AlvoradaTopBar
+import dev.gianluca.alvoradaapp.ui.components.ColorDot
 import dev.gianluca.alvoradaapp.ui.onboarding.SetupCard
 import dev.gianluca.alvoradaapp.ui.onboarding.WelcomeDialog
 import dev.gianluca.alvoradaapp.core.StreakSnapshot
@@ -82,11 +80,17 @@ import java.util.Locale
  * aqui, porque "o que falta" e "como foi o dia" são a mesma pergunta feita de dois
  * ângulos, e separá-las obrigava a olhar em dois lugares para saber onde você está.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PanelScreen(
     onOpenCamera: (Long) -> Unit,
+    /**
+     * Ajustes deixou de ser um botão no cabeçalho e virou item do menu lateral,
+     * mas esta callback continua viva: o diálogo de boas-vindas e o aviso de
+     * pendências levam direto para lá, e são justamente os dois caminhos em que
+     * quem ainda não conhece o app precisa chegar aos Ajustes sem procurar.
+     */
     onOpenSettings: () -> Unit,
+    onOpenDrawer: () -> Unit,
     setupRefreshKey: Int = 0,
 ) {
     val context = LocalContext.current
@@ -134,20 +138,16 @@ fun PanelScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Painel") },
-                actions = {
-                    // Ajustes vive aqui, e não numa aba: é tela de configuração e
-                    // diagnóstico, aberta em dias raros. Uma aba permanente sugeriria
-                    // que fizesse parte da rotina diária, e ocuparia o lugar de algo
-                    // que faz.
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Build, contentDescription = "Ajustes")
-                    }
-                },
-            )
-        },
+        // Transparente para o gradiente de `AlvoradaBackground` chegar até aqui:
+        // o padrão do Scaffold é `background` opaco, que cobriria o fundo inteiro
+        // e deixaria as superfícies de vidro sem nada para deixar passar.
+        containerColor = Color.Transparent,
+        // Obrigatório junto do container transparente: o Scaffold deriva o
+        // contentColor do containerColor, e `contentColorFor(Transparent)` não
+        // resolve nenhum papel do tema — o texto herdaria preto sobre o fundo
+        // escuro e simplesmente desapareceria.
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        topBar = { AlvoradaTopBar("Painel", onOpenDrawer) },
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -235,7 +235,7 @@ private fun DayHeader(date: String, completed: Int, total: Int, ratio: Float) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(8.dp)
-                .clip(RoundedCornerShape(4.dp)),
+                .clip(MaterialTheme.shapes.medium),
         )
     }
 }
@@ -285,7 +285,7 @@ private fun ProgressCard(progress: ProgressSummary, xpToday: Int) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
+                    .clip(MaterialTheme.shapes.small),
             )
 
             Spacer(Modifier.height(12.dp))
@@ -347,7 +347,7 @@ private fun WeekStrip(tallies: List<DayTally>) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(1f)
-                                .clip(RoundedCornerShape(6.dp))
+                                .clip(MaterialTheme.shapes.large)
                                 .background(
                                     if (tally.total == 0) empty
                                     else accent.copy(alpha = 0.25f + 0.75f * tally.ratio)
@@ -435,12 +435,7 @@ private fun FolderCard(folder: FolderProgress) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(parseColor(folder.colorHex))
-                )
+                ColorDot(folder.colorHex)
                 Spacer(Modifier.size(10.dp))
                 Text(
                     folder.name,
@@ -460,7 +455,7 @@ private fun FolderCard(folder: FolderProgress) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
+                    .clip(MaterialTheme.shapes.small),
             )
             Spacer(Modifier.height(12.dp))
             folder.rows.forEach { row -> MissionLine(row) }

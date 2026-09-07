@@ -1,5 +1,7 @@
 package dev.gianluca.alvoradaapp.data
 
+import dev.gianluca.alvoradaapp.core.ChecklistCycle
+import dev.gianluca.alvoradaapp.core.Cycle
 import dev.gianluca.alvoradaapp.core.FireOutlook
 import dev.gianluca.alvoradaapp.core.NextFireCalculator
 import dev.gianluca.alvoradaapp.core.Recurrence
@@ -47,7 +49,47 @@ val AlarmEntity.isOneShot: Boolean get() = recurrence().isOneShot
  */
 fun AlarmEntity.outlook(now: ZonedDateTime = ZonedDateTime.now()): FireOutlook =
     if (!enabled) FireOutlook.NONE
-    else NextFireCalculator.outlook(hour, minute, recurrence(), now, skipNextFireAt)
+    else NextFireCalculator.outlook(
+        hour = hour,
+        minute = minute,
+        recurrence = recurrence(),
+        from = now,
+        skipFireAt = skipNextFireAt,
+        suppressedUntil = suppressedUntil,
+    )
 
 /** Rótulo curto de repetição, para a lista e para o editor. */
 fun AlarmEntity.describeRepeat(): String = recurrence().describe()
+
+// ---------------------------------------------------------------------------
+// Checklists — a mesma ponte, para a mesma recorrência achatada em colunas.
+// ---------------------------------------------------------------------------
+
+fun ChecklistEntity.recurrence(): Recurrence = Recurrence(
+    kind = repeatKind,
+    daysMask = daysMask,
+    intervalWeeks = intervalWeeks,
+    anchorDate = anchorDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+    ordinalMask = ordinalMask,
+    monthDaysMask = monthDaysMask,
+)
+
+fun ChecklistEntity.withRecurrence(recurrence: Recurrence): ChecklistEntity = copy(
+    repeatKind = recurrence.kind,
+    daysMask = recurrence.daysMask,
+    intervalWeeks = recurrence.intervalWeeks,
+    anchorDate = recurrence.anchorDate?.toString(),
+    ordinalMask = recurrence.ordinalMask,
+    monthDaysMask = recurrence.monthDaysMask,
+)
+
+/**
+ * A rodada vigente deste checklist, ou `null` se ele está desligado ou configurado
+ * de um jeito que nunca acontece.
+ */
+fun ChecklistEntity.currentCycle(now: ZonedDateTime = ZonedDateTime.now()): Cycle? =
+    if (!enabled) null
+    else ChecklistCycle.currentAt(recurrence(), dueHour, dueMinute, now)
+
+/** Rótulo curto de frequência, para a lista e para o editor. */
+fun ChecklistEntity.describeRepeat(): String = recurrence().describe()

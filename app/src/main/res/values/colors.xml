@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Fundo do ícone adaptativo: o índigo do logo. Precisa ser um pouco mais claro
-         que o fundo do app (#120E22) para o ícone não sumir num tema escuro. -->
+         que o fundo do app (#0B0716) para o ícone não sumir num tema escuro. -->
     <color name="ic_launcher_background">#2E1B5E</color>
+
+    <!-- Espelha `InkBase` de `ui/theme/Color.kt`. Duplicado por necessidade: o tema
+         da janela é resolvido pelo sistema antes de qualquer código Kotlin rodar. -->
+    <color name="ink_base">#0B0716</color>
 </resources>

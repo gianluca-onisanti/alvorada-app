@@ -4,6 +4,10 @@
     <style name="Theme.Alvorada" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- Fundo da janela antes do primeiro frame do Compose. Sem isto o
+             padrão do framework é claro, e abrir o app às 6h dá um flash branco
+             antes do tema escuro assumir. -->
+        <item name="android:windowBackground">@color/ink_base</item>
     </style>
 
     <!-- Tela do alarme: fundo opaco, sem qualquer chrome do sistema competindo. -->

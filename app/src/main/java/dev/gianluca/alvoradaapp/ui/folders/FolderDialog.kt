@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -91,12 +90,12 @@ private fun ColorSwatch(hex: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(32.dp)
-            .clip(CircleShape)
+            .clip(MaterialTheme.shapes.small)
             .background(Color(android.graphics.Color.parseColor(hex)))
             .border(
                 width = if (selected) 3.dp else 0.dp,
                 color = MaterialTheme.colorScheme.onSurface,
-                shape = CircleShape,
+                shape = MaterialTheme.shapes.small,
             )
             .clickable(onClick = onClick)
     )

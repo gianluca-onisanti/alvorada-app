@@ -16,8 +16,18 @@ data class FireOutlook(
     val nextFire: Long?,
     /** O toque que está sendo pulado, ou `null` se nenhum pulo está em vigor. */
     val skipped: Long?,
+    /**
+     * Até quando um checklist o está calando, ou `null` se não está.
+     *
+     * Separado de [skipped] porque a tela precisa dizer coisas diferentes: "você
+     * pulou o toque de amanhã" e "o checklist já foi preenchido, ele volta domingo"
+     * não são a mesma frase, e a segunda não deve oferecer o botão de desfazer o
+     * pulo.
+     */
+    val suppressedUntil: Long? = null,
 ) {
     val isSkipping: Boolean get() = skipped != null
+    val isSuppressed: Boolean get() = suppressedUntil != null
 
     companion object {
         val NONE = FireOutlook(nextFire = null, skipped = null)
@@ -110,9 +120,26 @@ object NextFireCalculator {
         recurrence: Recurrence,
         from: ZonedDateTime,
         skipFireAt: Long?,
+        suppressedUntil: Long? = null,
     ): FireOutlook {
-        val first = nextFireMillis(hour, minute, recurrence, from) ?: return FireOutlook.NONE
-        if (skipFireAt == null || skipFireAt != first) return FireOutlook(first, null)
+        // A supressão por checklist é avaliada primeiro, e simplesmente adianta o
+        // ponto de partida da busca: todo disparo anterior a ela deixa de existir.
+        // Vale para vários toques, e não para um — um checklist semanal num
+        // despertador diário tem sete para calar.
+        val suppressing = suppressedUntil != null && suppressedUntil > from.toInstant().toEpochMilli()
+        val searchFrom = if (suppressing) {
+            Instant.ofEpochMilli(suppressedUntil!!).atZone(from.zone)
+        } else {
+            from
+        }
+
+        val first = nextFireMillis(hour, minute, recurrence, searchFrom)
+            ?: return FireOutlook.NONE
+        val suppressedMark = suppressedUntil.takeIf { suppressing }
+
+        if (skipFireAt == null || skipFireAt != first) {
+            return FireOutlook(first, null, suppressedMark)
+        }
 
         val after = nextFireMillis(
             hour = hour,
@@ -120,6 +147,6 @@ object NextFireCalculator {
             recurrence = recurrence,
             from = Instant.ofEpochMilli(first).atZone(from.zone),
         )
-        return FireOutlook(nextFire = after, skipped = first)
+        return FireOutlook(nextFire = after, skipped = first, suppressedUntil = suppressedMark)
     }
 }

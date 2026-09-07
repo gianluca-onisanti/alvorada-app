@@ -7,20 +7,23 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.gianluca.alvoradaapp.alarm.AlarmActivity
 import dev.gianluca.alvoradaapp.alarm.AlarmService
+import dev.gianluca.alvoradaapp.data.ThemeChoice
 import dev.gianluca.alvoradaapp.ui.AlvoradaNavigation
+import dev.gianluca.alvoradaapp.ui.components.AlvoradaBackground
 import dev.gianluca.alvoradaapp.ui.theme.AlvoradaTheme
 import kotlinx.coroutines.launch
 
@@ -38,12 +41,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Com `targetSdk 36` o Android 15+ desenha atrás das barras do sistema de
+        // qualquer forma. Declarar aqui é o que traz o `SystemBarStyle.auto` de
+        // brinde: sem ele ninguém controla o contraste dos ícones, e no tema claro
+        // sobre barra transparente eles ficam branco no branco.
+        enableEdgeToEdge()
         requestNotificationPermissionIfNeeded()
         followRingingAlarm()
 
         setContent {
-            AlvoradaTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
+            val preferences = remember { (application as AlvoradaApp).container.preferences }
+            val theme by preferences.themeChoice.collectAsState(initial = ThemeChoice.SYSTEM)
+
+            AlvoradaTheme(
+                darkTheme = when (theme) {
+                    ThemeChoice.SYSTEM -> isSystemInDarkTheme()
+                    ThemeChoice.LIGHT -> false
+                    ThemeChoice.DARK -> true
+                }
+            ) {
+                AlvoradaBackground {
                     AlvoradaNavigation(diagnosticsRefreshKey = refreshKey)
                 }
             }

@@ -38,4 +38,25 @@ enum class PointsReason {
     SNOOZE_PENALTY,
     PERFECT_DAY,
     REWARD_PURCHASE,
+    CHECKLIST_ITEM,
+    CHECKLIST_COMPLETE,
+}
+
+/**
+ * Ciclo de vida de uma rodada de checklist.
+ *
+ * OPEN → dentro da rodada, ainda dá para marcar.
+ * COMPLETED → todos os itens marcados; o despertador de cada um fica calado até a
+ *   rodada virar.
+ * EXPIRED → a rodada acabou sem tudo marcado. Fechada pela varredura diária.
+ *
+ * Não existe estado de falha com peso: uma rodada expirada não custa nada além de
+ * não ter rendido os pontos. É a mesma política de "missão não cumprida é
+ * informação, não repreensão".
+ */
+@Serializable
+enum class ChecklistCycleStatus {
+    OPEN,
+    COMPLETED,
+    EXPIRED,
 }
